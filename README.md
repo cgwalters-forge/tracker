@@ -1,7 +1,7 @@
 # tracker
 
 Work items and questions for [cgwalters-bot](https://github.com/cgwalters-bot)'s
-workstream. The [Workstream board](https://github.com/users/cgwalters-bot/projects/1)
+workstream. The [Workstream board](https://github.com/orgs/cgwalters-forge/projects/1)
 is a view over these issues plus the upstream issues and PRs the bot works on;
 anything on the board that isn't upstream is an issue here.
 
