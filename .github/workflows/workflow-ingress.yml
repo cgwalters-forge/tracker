@@ -1,0 +1,74 @@
+# agentic-job's deterministic check of a pull request's workflow and action
+# changes (its docs/workflow-ingress.md), for this repository.
+# Only base-branch code runs: this file and the checkout come from the base,
+# the checker from agentic-job at the commit review.yml pins, and the
+# proposed files are read as Git blobs. No secret is used.
+name: workflow-ingress
+
+on:
+  # No `paths` filter: as a required check it has to report on every pull
+  # request, and passes at once when nothing relevant changed.
+  pull_request_target: # zizmor: ignore[dangerous-triggers] Read-only, base-branch checker; PR blobs are data only.
+    # `edited` so that a retargeted pull request is vetted against its new base.
+    types: [opened, synchronize, reopened, edited]
+  # agentic-job's own has no merge_group path (its docs, "Merge queue
+  # limitation"). Here the queue needs the required check on its commit, so
+  # this only reports there and vets nothing: the file then comes from the
+  # queued tree, and each entry was vetted as a pull request by the base's
+  # copy.
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+env:
+  VET: ${{ github.event_name == 'pull_request_target' }}
+
+jobs:
+  # The name main's ruleset requires (docs/rulesets/tracker-main.json).
+  workflow-ingress:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: workflow-ingress-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.VET == 'true'
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Fetch agentic-job's checker
+        if: env.VET == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: cgwalters-forge/agentic-job
+          ref: fbb0a2708f231ecc7acd7116fc957b8b3712a41c
+          path: .agentic-job
+          sparse-checkout: workflow
+          persist-credentials: false
+      # The releases and checksums agentic-job's own workflow-ingress uses.
+      - name: Install verified static analyzers
+        if: env.VET == 'true'
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fL --retry 3 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o actionlint.tar.gz
+          curl -fL --retry 3 https://github.com/zizmorcore/zizmor/releases/download/v1.30.1/zizmor-x86_64-unknown-linux-gnu.tar.gz -o zizmor.tar.gz
+          printf '%s\n' '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tar.gz' 'e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a  zizmor.tar.gz' | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+          tar -xzf zizmor.tar.gz zizmor
+      - name: Vet the proposed Git objects without checking them out
+        if: env.VET == 'true'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+          ZIZMOR: ${{ runner.temp }}/zizmor
+          ACTIONLINT: ${{ runner.temp }}/actionlint
+        run: |
+          [[ "$BASE" =~ ^[0-9a-f]{40}$ && "$HEAD" =~ ^[0-9a-f]{40}$ && "$PR" =~ ^[0-9]+$ ]]
+          git fetch --no-tags origin "$BASE" "refs/pull/$PR/head"
+          git cat-file -e "$HEAD^{commit}"
+          python3 .agentic-job/workflow/ingress.py . "$BASE" "$HEAD"

@@ -13,7 +13,7 @@ on:
     - cron: '*/10 * * * *'
   # Runs this file as the default branch has it, with the default branch as
   # github.ref, whatever ref the dispatch run was on.
-  workflow_run:
+  workflow_run: # zizmor: ignore[dangerous-triggers] Default-branch code only; no artifact or ref of the finished run is used.
     workflows: [dispatch]
     types: [completed]
   workflow_dispatch:
