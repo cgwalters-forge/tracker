@@ -94,6 +94,13 @@ by repository, taken before changing them. To put one back, look up the
 ruleset's id with `gh api repos/OWNER/REPO/rulesets` and run
 `jq '{name, target, enforcement, conditions, rules, bypass_actors}' FILE | gh api -X PUT repos/OWNER/REPO/rulesets/ID --input -`
 (`-X POST repos/OWNER/REPO/rulesets` where it no longer exists).
+The `*-main.json` files are different: each is that repository's main
+ruleset. agentic-job's and agent-board's are copies of the live ones,
+taken on 2026-10-13; agentic-job's should also require `workflow-ingress`
+(cgwalters-forge/agentic-job#529). This repository's is the intended one:
+it adds the `workflow-ingress` check to the live one, to be applied once
+that workflow is on main. CI only checks that they parse; nothing compares
+them with the live rulesets yet (cgwalters-forge/tracker#538).
 
 ## Still only on the machine
 

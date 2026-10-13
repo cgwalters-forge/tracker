@@ -48,7 +48,8 @@ jobs:
 
   # The bounds, runner configuration and pools that dispatch.yml reads from
   # the default branch, and review.yml's bounds: a file that does not parse
-  # fails every run after the merge.
+  # fails every run after the merge. The rulesets of docs/rulesets are
+  # only checked to parse.
   config:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -56,9 +57,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Parse the JSON and TOML files of .github/agentic-job and workflow
+      - name: Parse the JSON and TOML files of .github/agentic-job, workflow and docs/rulesets
         run: |
-          python3 - .github/agentic-job/*.json .github/agentic-job/*.toml workflow/*.toml <<'PY'
+          python3 - .github/agentic-job/*.json .github/agentic-job/*.toml workflow/*.toml docs/rulesets/*.json <<'PY'
           import json, sys, tomllib
 
           failed = False
