@@ -1,0 +1,1 @@
+**Note on secret-shaped strings.** Never write a literal secret-shaped string (`sk-ant-…`, `sk-…`, `ghp_…`, `github_pat_…`, AWS keys, private-key blocks) into code, tests, fixtures or docs. Where a test needs a key-shaped value, build it at run time from parts, or use an obviously fake value such as `test-key-not-secret`. Grep your diff for these patterns before you hand back.
