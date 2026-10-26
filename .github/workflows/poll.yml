@@ -24,7 +24,7 @@ permissions: {}
 # a revision reviewed here, never agent-board's moving branch: move it only
 # with a review of what that revision's `pass` does.
 env:
-  AGENT_BOARD_REV: a8a8102c17e3d9514bb6abd451608fab8170a95b
+  AGENT_BOARD_REV: 49b54470f1fe81f5a3e0e0d6f01c5a0de9029240
 
 jobs:
   pass:
@@ -111,7 +111,8 @@ jobs:
 
   next:
     needs: pass
-    # Only an applying pass continues the chain, whether it passed or failed;
+    # Only an applying pass continues the chain, whether it passed or failed
+    # (`!cancelled()`, else GitHub adds an implicit `success()`);
     # a preview by hand never starts one. There is one chain: a newer `next`,
     # from a schedule or a pass by hand, replaces a waiting one. Setting
     # PASS_APPLY to anything but `enabled`, or cancelling the waiting run,
@@ -121,7 +122,7 @@ jobs:
       group: pass-next
       cancel-in-progress: true
     if: >-
-      ${{ (needs.pass.result == 'success' || needs.pass.result == 'failure') && vars.PASS_APPLY == 'enabled' &&
+      ${{ !cancelled() && (needs.pass.result == 'success' || needs.pass.result == 'failure') && vars.PASS_APPLY == 'enabled' &&
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
       (github.event_name == 'schedule' || inputs.apply) }}
     runs-on: ubuntu-26.04
