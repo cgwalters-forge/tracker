@@ -393,7 +393,8 @@ forge-sync-drift manifest:
 # manifest.json beside it, passing for pass-* and reporting drift for the
 # fixture's repository otherwise; then on this
 # repository's own files against the real manifest, so moving the pin in
-# review.yml fails here until review_pin moves with it.
+# review.yml fails here until review_pin moves with it, and dropping
+# .github/renovate.json or renovate_preset fails too.
 test-forge-sync:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -424,10 +425,15 @@ test-forge-sync:
       fi
       echo "ok forge-sync refuses manifest '${manifest:-<missing>}'"
     done
-    jq -n --rawfile review .github/workflows/review.yml --rawfile dependabot .github/dependabot.yml \
-      '{repo: "cgwalters-forge/tracker", $review, $dependabot, justfile: true}' |
-      {{ just_executable() }} forge-sync-drift .github/forge-sync/repos.json
+    self=$(jq -n --rawfile review .github/workflows/review.yml --rawfile dependabot .github/dependabot.yml \
+      --rawfile renovate .github/renovate.json '{repo: "cgwalters-forge/tracker", $review, $dependabot, justfile: true, $renovate}')
+    {{ just_executable() }} forge-sync-drift .github/forge-sync/repos.json <<< "$self"
     echo "ok this repository against .github/forge-sync/repos.json"
+    # The real manifest must keep requiring the preset of this repository.
+    if {{ just_executable() }} forge-sync-drift .github/forge-sync/repos.json <<< "$(jq '.renovate = null' <<< "$self")" > /dev/null 2>&1; then
+      echo "this repository without .github/renovate.json: want drift, got none" >&2; exit 1
+    fi
+    echo "ok this repository without .github/renovate.json drifts"
 
 # forge-sync-drift on the default branch of every repository in the
 # manifest, read through the contents API (a 404 is a missing file); fails
