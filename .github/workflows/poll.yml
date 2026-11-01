@@ -96,8 +96,11 @@ jobs:
         shell: bash
         # The caps of the first scheduled passes, until they have been
         # watched; stderr too, so that the summary says why a pass failed.
+        # Dispatch picks one fix bounds file per target, so the pass needs both.
         run: |
           "$AGENT_BOARD" pass --config "$RUNNER_TEMP/pass.json" ${APPLY:+"$APPLY"} \
+            --fix-bounds .github/agentic-job/fix.toml \
+            --fix-bounds .github/agentic-job/midstream-fix.toml \
             --max-dispatch 8 --max-writes 20 --max-status-changes 50 2>&1 | tee "$RUNNER_TEMP/pass.log"
       # GitHub drops agent-board-pin.yml's hourly runs too, so the pass starts
       # it when agent-board's head is not the pin and has no pin PR yet (the
