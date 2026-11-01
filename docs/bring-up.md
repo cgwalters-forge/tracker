@@ -20,6 +20,10 @@ it ([homegit-freeze.md](homegit-freeze.md) lists what replaced it). A
 change to a repository, this one's notes included, is a dispatched run's
 pull request, not a commit made on the machine.
 
+This first part describes the existing deployment, not defaults for another
+organization. For a new installation, start with
+[A second operator's deployment](#a-second-operators-deployment) below.
+
 ## What to clone
 
 This repository, which has the
@@ -65,7 +69,9 @@ override them: `AGENT`, `AGENT_MODEL`, `INFERENCE_URL`,
 `gh secret list -o cgwalters-forge` show the names; the secret's value is
 cgwalters' to store, and the bot never copies or prints it. The inference
 proxy and the tailnet the runs join are a host of his, with its own policy,
-and are not brought up from here.
+and are not brought up from here. A manual `poll.yml` run with `apply=true`
+can write even with `PASS_APPLY` unset; the variable gates scheduled apply
+and the successor chain, not that manual input.
 
 ## Dispatching a run
 
@@ -90,8 +96,7 @@ midstream fork, in `midstream.toml` and `midstream-fix.toml` instead.
 Runs push as `cgwalters-bot`, and apply pushes a branch to a repository
 that account owns only if the repository's default branch has
 `.github/agentic-job/accept-owner-branches` naming it
-(`acceptsOwnerBranches` in agentic-job's
-[`workflow/push.cjs`](https://github.com/cgwalters-forge/agentic-job/blob/main/workflow/push.cjs));
+([agentic-job's owner-branch documentation](https://github.com/cgwalters-forge/agentic-job/blob/main/docs/workflow.md#a-repository-the-applying-account-owns));
 otherwise apply fails with "owns ... and has no fork of it to push to"
 (#517). So a `cgwalters-bot/*` repository is a dispatch or fix target only
 once that file is there, and a test in `.github/agentic-job/config-test/tests/config.rs`
@@ -181,9 +186,8 @@ isolate runners from each other, and enable tailnet HTTPS
 ([agentic-job#536](https://github.com/cgwalters-forge/agentic-job/issues/536));
 choose the operator login list and review site's origins
 ([tracker#576](https://github.com/cgwalters-forge/tracker/issues/576)). Record any
-applied tailnet change as a dated entry in the private wiki
-([llm-wiki#35](http://forge/colin/llm-wiki/issues/35)). No tailnet change is made
-by this workflow.
+applied tailnet change in the operator's private infrastructure log. No
+tailnet change is made by this workflow.
 
 Dispatch on the default branch with an optional public opening prompt, a pool
 (default `claude`) and `idle-minutes` (empty uses the config's 10; range 1–60).
@@ -283,3 +287,292 @@ Dispatch briefs written before
 and are lost. Each later task's text reaches `dispatch.yml` as its `task`
 input, and can be read back from that run's log only while GitHub keeps
 the log.
+
+## A second operator's deployment
+
+This is a GitHub walkthrough for an operator starting in their own
+organization, not recovery of this deployment. The source of truth is
+agent-board's [setup](https://github.com/cgwalters-forge/agent-board/blob/main/docs/setup.md)
+and [pass configuration](https://github.com/cgwalters-forge/agent-board/blob/main/docs/pass.md#one-configuration-file),
+agentic-job's [workflow](https://github.com/cgwalters-forge/agentic-job/blob/main/docs/workflow.md)
+and [inference](https://github.com/cgwalters-forge/agentic-job/blob/main/docs/inference.md)
+guides, and the actions [README](https://github.com/cgwalters-forge/actions/blob/main/README.md)
+and [deployment file](https://github.com/cgwalters-forge/actions/blob/main/deployment/deployment.json).
+These links follow main; use documentation at the reviewed revisions you
+actually deploy where main differs. In particular, the actions wrappers
+currently compose agentic-job v0.6.2; main's workflow/isolation layout is
+newer. Do not mix their steps or assume a main-only input is available.
+
+### 1. Choose identities and create the board
+
+Create an organization Project v2, a public caller/tracker repository with
+a protected default branch, a disposable public target repository and a
+dedicated bot account. Choose the human operator login, bot login,
+organization login **and numeric owner ID**, caller `OWNER/REPO`, default
+branch, dispatch workflow basename, target repository lists and project
+number (not its node ID). Keep these in trusted deployment configuration,
+not task inputs. Authorize Actions/reusable workflows, bot access and token
+SSO/organization approval where needed. Project writes and fork-based PR
+apply have different credential requirements; a board read proves neither.
+
+Follow setup's **Connect one lane** for the Status/Priority options,
+`project init` (only missing Turn/Run/Result fields), labels and operator
+assignment. Install `gh` and agent-board from a reviewed source revision.
+Run setup's offline rehearsal without tokens first, then make a live
+snapshot and preview reconciliation against your project. Never copy
+fixture identities into live configuration. Keep scheduling off.
+
+### 2. Own the wrappers and prove dispatch/check/apply
+
+Deploy your own copy of the actions wrappers, or arrange explicit admission
+with their operator; upstream rejects owners absent from `admit/owners.json`.
+For an independent copy, set that file to your organization login and numeric
+ID, set `deployment/deployment.json`'s `agent-config-repo` and `agent-model`,
+and repoint both wrappers' literal `uses: cgwalters-forge/actions/...` lines
+at your copy. Otherwise they still execute upstream admission, tailnet and
+deployment defaults. Follow the
+[deployment action](https://github.com/cgwalters-forge/actions/blob/main/deployment/README.md)
+and [admission action](https://github.com/cgwalters-forge/actions/blob/main/admit/README.md),
+not a search-and-replace of upstream source names: pinned agentic-job calls
+and their expected-source guards must continue to agree.
+
+Install the actions README's dispatch caller on your protected default
+branch, pointing `uses` at your wrapper. Keep its `kind`, `repo`, `item`,
+`task` interface and `KIND OWNER/REPO#N` run-name prefix that agent-board
+recognizes. Supply caller-owned `.github/agentic-job/dispatch.toml`,
+`fix.toml`, `hosted.toml` and profiles if adopting tracker's profile composer.
+Set exact `repos`, allowed `bases`, output types/counts, file bounds and
+finite time/request/spending limits; do not inherit this deployment's
+allowlists or `.github` exemptions. Follow agentic-job's
+[scripted trial](https://github.com/cgwalters-forge/agentic-job/blob/main/docs/dispatch.md#ten-minute-scripted-trial)
+for the first model-free research run on a throwaway issue. The wrapper
+supports `agent: fake`; that run needs no broker or tailnet.
+
+The README's minimal caller is enough for that manual trial, **not** for
+automatic pass work. Before enabling pools, extend it to accept `pool`
+and resolve it through a trusted, closed pool-to-agent/model/budget map,
+passing those resolved settings to the wrapper and rejecting unknown pools.
+Use agent-board's [dispatch contract](https://github.com/cgwalters-forge/agent-board/blob/main/docs/dispatch.md#the-request)
+and this repository's [pool-capable caller](../.github/workflows/dispatch.yml)
+and [pool mapping](../.github/agentic-job/pools.json) as references, replacing
+the values with yours. The pass sends `pool` when selecting automatic work;
+without that declared input GitHub refuses the dispatch with HTTP 422.
+The contract's optional `base` input is for stacked plans; do not enable
+those unless your chosen caller supports it too.
+
+Before a PR-producing run, create the caller's protected apply environment
+(here `agent-apply`), restrict it to the protected default branch and
+explicitly forward `SAFE_OUTPUTS_PAT`. A repository/organization secret
+can have a deployment-chosen stored name (here `CGWALTERS_BOT_PAT`) mapped
+to `SAFE_OUTPUTS_PAT`; an environment-only secret must be stored and
+forwarded as `SAFE_OUTPUTS_PAT`. Follow workflow's **The apply job and its
+token** for fork permissions/scopes. Keep fork Actions off and forks free
+of secrets. Never pass this token to the agent or check. Status helpers may
+also use the explicitly forwarded token, outside apply's environment gate.
+
+Inspect policy admission, the agent artifact, the independent check report
+and `applied.json`, not just a green dispatch. Check runs on a separate
+machine without the apply credential; only accepted outputs reach apply.
+Start with a comment, then one harmless documentation PR, verifying the
+fork, base, files and destination. Scripted success does not prove inference,
+review or a scheduled loop.
+
+### 3. Register inference and install review separately
+
+Provision a broker and runners' network path using the inference guide;
+provider credentials stay at the broker. Set your own `INFERENCE_URL` and
+`INFERENCE_AUDIENCE` together, never copying a deployment's address. Use
+`inference-register: github-oidc` (the wrappers' default). Their composed
+agent jobs run in the wrappers themselves: admit the **actual wrapper
+identity**, not just agentic-job.yml. Follow inference's **Which workflows
+a broker admits**: `called_workflows` can bind the reusable file/ref or
+pinned SHA and calling repository IDs; a caller-composed job instead needs
+repository-scoped `any_workflow`, admitting any workflow there able to
+request OIDC. Record which form you authorized, finite broker budgets,
+audience and workflow revision; update admission when pins change.
+`id-token: write` alone does not register a workflow at the broker.
+
+Set up your own Tailscale OIDC federation, client ID, runner tags and ACLs
+following the [tailnet action](https://github.com/cgwalters-forge/actions/blob/main/tailscale/README.md).
+Federation and broker must check the same admitted numeric owner IDs as
+the wrappers, not only their shared `job_workflow_ref`. Confirm the join
+and reachability before a real research run. The shared workflow does not
+provide a supported provider-key shortcut; do not provision
+`INFERENCE_API_KEY` for this walkthrough.
+
+In each target install a caller of your `cgwalters-review.yml` wrapper,
+using the actions README's events, condition and six permission grants,
+plus `workflow/review.toml`, `review-command.toml` and `review.md` on the
+trusted base. Set repository/base/event/bot bounds for your target. Never
+execute PR head code in privileged jobs. Exercise a review and synchronize
+cancellation on a disposable PR. Real approval submission requires both
+`AGENT_REAL_REVIEWS=true` and GitHub Actions' permission to create/approve
+PRs. Leave it unset initially; choose required reviews, stale-approval
+dismissal and merge policy independently. An agent verdict is not human
+authorization; review's compatibility status is not a merge gate.
+
+### 4. Preview a pass, then enable one poll caller
+
+Write a fresh `pass.json` using setup's minimal live example. Set
+`operator`, `bot`, `dispatchRepo`, `dispatchWorkflow`, `dispatchRef`,
+`board.owner`, `board.project` and exact `workRepositories`; begin with
+`wip: 0`, `triage: false`, no `follow` and no `epics`. This schema is **not**
+`.github/poll/agent-board.json`: unknown keys and nulls are refused.
+From a trusted default-branch checkout with a read credential, run:
+
+```sh
+agent-board pass --config pass.json --max-dispatch 0 --max-writes 0 --max-status-changes 5
+```
+
+No `--apply`. Zero caps bound dispatch/write proposals; more than five
+Status changes refuses that stage whole. These prevent an unexpectedly
+large first census from becoming an approved batch, not replace the write
+gate. Inspect every error and held line before progressing.
+
+To preview automatic candidates, choose positive `wip` and `pools` with
+your own private `usage.repository`/`issue`. Set `usage.url` only when the
+caller reaches the broker's usage endpoint; otherwise pacing reads the
+published snapshot. Enable only tested lanes: `follow` and
+`pr.reviewWorkflow`/`pr.fixPools` for PR follow-up, `epics.repository` for
+epics, and `triage` plus `triagePools`/`planPools` for no-plan work. Pool
+names must match dispatch's agent/model/budget mapping. Do not import
+tracker's WIP, pace, budgets or retry policy as defaults.
+
+The exhaustive pass reference linked above covers optional fields. Every
+additional identity/destination must be yours: `holds.repository`/`issue`
+(private, with `holds.needsYou` for the app); `holds.proposals`'s repository,
+label, repositories and org; `direction.repository`/`issue`;
+`maintain.repos.include`/`exclude` and `maintain.digest.repository`/`issue`;
+`sweep.repository`; all `pr` repository, author, head-owner, workflow and
+pool lists; `budget`'s source/URL/pool map or weekly amount and harness
+repositories; and `promote`'s forks/upstreams/bases, policy repository/path
+and operator sign-off if enabling promotion. Choose model `prices`, pacing
+targets/bursts, triage/revisit/sweep/maintain timing, overlap/stall/retry/merge
+caps and optional state/cache paths, or omit them for documented defaults.
+Unused sections stay absent.
+
+Install one pinned poll caller as setup's **Pinned callers** describes:
+trusted config, reviewed `AGENT_BOARD_REV`, serialized passes, finite job
+timeout and explicit dispatch/write/Status caps. This repository's
+`poll.yml` also needs its Justfile build recipe, pass/fix bounds, secret
+mapping and tailnet configuration; it is an example, not an installer.
+Its direct tailnet call does not forward the wrappers' tailnet variables:
+adapt that action call with your own inputs or organization entry too.
+Preview by hand, then try a small explicit apply, verify receipts and a
+second idle pass in staging, and only then enable scheduling. In this
+caller `PASS_APPLY=enabled` enables scheduled writes and successor runs;
+unsetting it stops that chain but does not prevent manual `apply=true`.
+Never run two appliers against one board.
+
+### Repository variables and secrets checklist
+
+Set these on the caller and each review target as applicable: reusable
+workflows read the calling repository's variables. These are choices, not
+values to copy from this deployment:
+
+| Variable | Deployment's choice |
+| --- | --- |
+| `AGENT`, `AGENT_MODEL` | Supported agent and model served by your broker; test one first |
+| `AGENT_RUNNER` | Disposable runner label(s), encoded as JSON |
+| `AGENT_CONFIG` | Trusted runner TOML path, or deliberately use the wrapper's documented default |
+| `AGENT_CONFIG_REPO`, `AGENT_CONFIG_PATH` | Your agent configuration repository and configuration directory |
+| `INFERENCE_URL`, `INFERENCE_AUDIENCE` | Your reachable broker root and matching OIDC audience |
+| `AGENTIC_JOB_TAILSCALE_OAUTH_CLIENT_ID`, `AGENTIC_JOB_TAILSCALE_TAGS` | Your federated client ID and tags; both needed for an unlisted organization |
+| `APPLY_ENVIRONMENT` | Protected caller environment, unless fixed by dispatch input |
+| `PASS_APPLY` | Unset during bring-up; `enabled` only after watching bounded applies |
+| `AGENT_REAL_REVIEWS` | Unset until checked review submission is wanted; then `true` |
+| `REVIEW_BOT_IDS` | Optional JSON numeric bot IDs, also admitted by login in review bounds |
+| `AGENTIC_JOB_DETECT_MODEL` | Leave unset: these wrappers' hosted detector has no tailnet join |
+
+Secret names only: `SAFE_OUTPUTS_PAT` is the wrapper/apply interface;
+`CGWALTERS_BOT_PAT` is this caller's stored name and pass credential, not
+a required name for your deployment. Local CLI reads use `GH_TOKEN`; a
+pass may use `DISPATCH_TOKEN` separately for Actions write. No model key,
+tailnet auth key or OAuth client secret belongs in these workflows.
+Auxiliary automation is not needed for this loop: leave `SUPERVISOR`,
+`BROKER_OUTAGE`, `RELEASE_TRAIN`, `AGENT_BOARD_PIN` and `WEEKLY_BLOG` unset.
+If later copying those callers, replace their configs and issue IDs too;
+supervisor's pre-checkout gate needs `OPERATOR` and
+`SUPERVISOR_REQUESTS_ISSUE`, and sessions need `TAILNET_DOMAIN` and trusted
+operator/origin lists. These are separate installations.
+
+### 5. Host the review app for your operator
+
+Use the review app's [README](https://github.com/cgwalters-forge/review/blob/main/README.md)
+for Node requirements, `npm ci`, `npm run check`, local serving and static
+hosting. It is a browser client of GitHub, not the review workflow or a
+scheduler. Its current GitHub pages are **Needs you** and **Status**; old
+chat/operations routes do not provide an interactive coordinator.
+
+Before building your copy, edit
+[`src/github/config.ts`](https://github.com/cgwalters-forge/review/blob/main/src/github/config.ts):
+`BOARD_OWNER`, `BOARD_NUMBER`, `OPERATOR`, `BOT_LOGIN`, `FORGE_ORG`,
+`TRACKER_REPO`, `USAGE_REPO` and `USAGE_ISSUE` must match your pass. Review
+field/status/label constants and `ROLE_APPS`; list only trusted identities.
+Replace the operator sign-off locally if using Make it mine, never adopting
+someone else's identity. The file retains old devspace/workflow/heartbeat
+constants too; do not point them at this deployment. Set these companion
+files under `src/github/` before publication:
+
+- `action-config.json`: operator, planner, tracker, repository allowlist,
+  project URL and org for operator proposals.
+- `decisions-config.json`: document repo/number or `document: null` to
+  disable that source; choose whether to keep `legacyQuestions`.
+- `review-draft-config.json`: leave disabled unless installing the matching
+  draft/send workflow; then set tracker, label, authors, sendBox, workflow, ref.
+- `usage-config.json`: allowance repository/path and cost repository/ref.
+- `chat-config.json`: replace network domain and source
+  repo/workflow/issue/publisher even with no browser chat pane; the build
+  still reads it for its connection policy. To disable, use
+  `{"tailnetDomain":"","sources":[]}` rather than deleting the imported file.
+
+Choose your own static site repository, Pages workflow and publication URL.
+The build contains public configuration, never tokens or private issue
+contents. Sign in only to a site you trust with the operator's token using
+the README's scopes; it is stored in that browser and sent to GitHub, not
+installed as an Actions secret. Confirm your project and published
+holds/status first, then test writes only on throwaway items. Missing or
+stale snapshots do not prove the queue is empty.
+
+### Remaining deployment coupling
+
+The known configurability work is
+[actions#106](https://github.com/cgwalters-forge/actions/issues/106) and
+[agent-board#226](https://github.com/cgwalters-forge/agent-board/issues/226).
+Both are closed; that does **not** mean the whole harness is an installer.
+For the components above, the remaining places to inspect are:
+
+- **actions:** `deployment/deployment.json` still supplies this deployment's
+  model/config-repository defaults; `admit/owners.json` and
+  `tailscale/tailnets.json` are its owner/network registries. Both
+  `.github/workflows/cgwalters-agentic-job.yml` and `cgwalters-review.yml`
+  retain deployment broker URL/audience fallbacks and literal action
+  repository references. Override both inference variables, repoint your
+  copy's actions references and replace registries, without reproducing
+  private network values. Upstream agentic-job calls/source guards are
+  software provenance, not your organization identity.
+- **agent-board:** #226 made supervisor use configured `operator` and
+  added `generatedBy` to poll/supervisor's `agent-board.json`. Its omitted
+  footer still defaults to this operator's attribution; set your own
+  single-line footer if installing those commands. Do not put `generatedBy`
+  in `pass.json`, whose schema does not list it. Setup's live `test deploy`
+  path still restricts the organization to upstream's staging owner: it is
+  not a generic test for your organization. Use the manual lane checks.
+- **tracker:** `.github/pass.json`, `.github/poll/agent-board.json`,
+  `.github/agentic-job` bounds/pools/profiles, `workflow/review*`, operator
+  notes and auxiliary workflow configs describe this operator and board.
+  Workflows also name this secret, wrapper paths and fixed publication
+  issues. Copy only needed lanes and inventory each identity; legacy
+  poll/supervisor config is not a second pass config to synchronize.
+- **review:** the constants and JSON files in step 5 are build-time
+  deployment settings, not repository-variable overrides. Pages/static
+  branding and the CLI's project-specific upstream filter name remain
+  deployment-specific too. Signing in as another operator does not
+  retarget a copied build.
+
+This walkthrough changes documentation only. It does not authorize another
+organization at a broker/tailnet, provision secrets, deploy a site or claim
+a live trial succeeded. Keep a deployment log with reviewed revisions,
+non-secret setting names, preview/apply/run/PR links and actual exit
+statuses; mark unattempted lanes unverified. Stop at unreadable or ambiguous
+prerequisites rather than widening bounds to force progress.
