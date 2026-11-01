@@ -5,7 +5,18 @@
 set positional-arguments
 
 # Every test of the files under .github.
-test: test-config test-supervisor-config test-supervisor-workflow test-poll-next test-review-gate test-forge-sync test-weekly-material agent-board-pin
+test: test-config test-supervisor-config test-supervisor-workflow test-poll-bounds test-poll-next test-review-gate test-forge-sync test-weekly-material agent-board-pin
+
+# poll must pass both of the fix bounds files dispatch selects per target.
+test-poll-bounds:
+    #!/usr/bin/env node
+    const assert = require('node:assert/strict');
+    const poll = require('node:fs').readFileSync('.github/workflows/poll.yml', 'utf8');
+    const command = /"\$AGENT_BOARD" pass .*\\\n(?: {12}.*\\\n)* {12}.*\n/.exec(poll)?.[0];
+    assert.ok(command, 'the agent-board pass command');
+    assert.deepEqual([...command.matchAll(/--fix-bounds (\S+)/g)].map(m => m[1]),
+      ['.github/agentic-job/fix.toml', '.github/agentic-job/midstream-fix.toml']);
+    console.log('ok poll passes both fix bounds files to agent-board pass');
 
 # poll.yml's `next` step as written, with gh and sleep mocked: after its
 # sleep it dispatches unless a newer applying run on the default branch is
