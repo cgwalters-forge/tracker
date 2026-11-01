@@ -29,7 +29,7 @@
       "fork": "cgwalters-bot/tracker",
       "files": [
         ".github/workflows/review.yml",
-        ".github/agentic-job/config.test.cjs"
+        ".github/agentic-job/config-test/tests/config.rs"
       ]
     },
     {
