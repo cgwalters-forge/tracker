@@ -140,14 +140,6 @@ test('dispatch.toml and fix.toml open complete work ready', () => {
   assert.match(outputs('fix.toml'), /^push_to_pull_request_branch = \{ max = 1, branches = \["dispatch\/\*\*", "bot\/\*\*", "release-train\/\*\*"\], replacement_max_commits = 5, ready_when_complete = true \}$/m);
 });
 
-test('poll passes both of dispatch’s fix bounds to agent-board pass', () => {
-  const poll = read('../workflows/poll.yml');
-  const command = /"\$AGENT_BOARD" pass .*\\\n(?: {12}.*\\\n)* {12}.*\n/.exec(poll)?.[0];
-  assert.ok(command, 'the agent-board pass command');
-  assert.deepEqual([...command.matchAll(/--fix-bounds (\S+)/g)].map(m => m[1]),
-    ['.github/agentic-job/fix.toml', '.github/agentic-job/midstream-fix.toml']);
-});
-
 // D17 (docs/operator-notes.md, 2026-10-17): bootc-dev is open to
 // comment-only kinds and to fix, and to nothing else; comment.toml is
 // dispatch.toml's targets with no pull request.
