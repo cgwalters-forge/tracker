@@ -59,7 +59,7 @@
         "cgwalters-bot/praxis-credential-broker"
       ]}},
   "budget": {"weeklyUsd": 2000},
-  "pr": {"staleDays": 0, 
+  "pr": {"staleDays": 0, "noMerge": ["cgwalters-forge/bootc", "cgwalters-forge/composefs-rs"], 
     "reviewWorkflow": "review.yml",
     "fixPools": ["claude", "openai"],
     "mergeAuthors": ["dependabot[bot]"],
