@@ -33,7 +33,7 @@
     "pool": "claude",
     "cooldownHours": 1,
     "skipUnchangedFailures": false,
-    "profile": { "repository": "cgwalters-forge/agenthome", "ref": "7ba2e215d770074f9c49bfc387bb57259ec013a3" },
+    "profile": { "repository": "cgwalters-forge/agenthome", "ref": "b04318245f2a4fb28df8856d7cb809cf990cfea5" },
     "requests": { "repository": "cgwalters-forge/tracker", "issue": 656 },
     "log": { "repository": "cgwalters-forge/operator", "issue": 2 },
     "state": { "repository": "cgwalters-forge/tracker", "issue": 718 },
@@ -44,6 +44,7 @@
     "project": "PVT_kwDOE9oHIs4BlJLc",
     "dailyCaps": {
       "comment": 20,
+      "file_bug": 5,
       "create_issue": 15,
       "close": 10,
       "remove_needs_human": 12,
