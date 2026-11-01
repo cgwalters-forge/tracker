@@ -24,7 +24,7 @@ permissions: {}
 # a revision reviewed here, never agent-board's moving branch: move it only
 # with a review of what that revision's `pass` does.
 env:
-  AGENT_BOARD_REV: 70f4a61a636e843bc33b344cb9073a3e3516a3d1
+  AGENT_BOARD_REV: d207b45788f2e475a868e66fe8fd58ea43d090cc
 
 jobs:
   pass:
@@ -96,9 +96,35 @@ jobs:
         shell: bash
         # The caps of the first scheduled passes, until they have been
         # watched; stderr too, so that the summary says why a pass failed.
+        # Dispatch picks one fix bounds file per target, so the pass needs both.
         run: |
           "$AGENT_BOARD" pass --config "$RUNNER_TEMP/pass.json" ${APPLY:+"$APPLY"} \
+            --fix-bounds .github/agentic-job/fix.toml \
+            --fix-bounds .github/agentic-job/midstream-fix.toml \
             --max-dispatch 8 --max-writes 20 --max-status-changes 50 2>&1 | tee "$RUNNER_TEMP/pass.log"
+      # GitHub drops agent-board-pin.yml's hourly runs too, so the pass starts
+      # it when agent-board's head is not the pin and has no pin PR yet (the
+      # title is the one `just bump-agent-board` gives it); the pin workflow
+      # checks CI and stays idempotent, and its schedule is the fallback.
+      - name: Start the agent-board pin bump
+        if: ${{ !cancelled() && vars.AGENT_BOARD_PIN == 'enabled' }}
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ secrets.CGWALTERS_BOT_PAT }}
+          DISPATCH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: bash
+        run: |
+          source=$(jq -er .source .github/poll/agent-board.json)
+          branch=$(jq -er .branch .github/poll/agent-board.json)
+          bot=$(jq -er .bot .github/poll/agent-board.json)
+          head=$(gh api "repos/${source#https://github.com/}/commits/$branch" --jq .sha)
+          [[ $head =~ ^[0-9a-f]{40}$ ]] || { echo "::error::no head for $source $branch"; exit 1; }
+          if [[ $head == "$AGENT_BOARD_REV" ]]; then echo "the pin is $branch's head"; exit 0; fi
+          title="workflows: Move agent-board to ${head:0:7}"
+          open=$(gh pr list --repo "$GITHUB_REPOSITORY" --author "$bot" --head agent-board-pin --state open --json title --jq '.[0].title // ""')
+          if [[ $open == "$title" ]]; then echo "already proposed: $title"; exit 0; fi
+          GH_TOKEN=$DISPATCH_TOKEN gh workflow run agent-board-pin.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH"
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
@@ -113,11 +139,15 @@ jobs:
     needs: pass
     # Only an applying pass continues the chain, whether it passed or failed
     # (`!cancelled()`, else GitHub adds an implicit `success()`);
-    # a preview by hand never starts one. There is one chain: a newer `next`,
-    # from a schedule or a pass by hand, replaces a waiting one. Setting
-    # PASS_APPLY to anything but `enabled`, or cancelling the waiting run,
-    # ends it. While it waits, `next` keeps a hosted runner busy for up to ten
-    # minutes per pass.
+    # a preview by hand never starts one. A newer `next` replaces a waiting
+    # one, but two chains offset by a few minutes never wait at once (#1019),
+    # so before dispatching `next` also stops if a newer applying run on the
+    # default branch is still to finish: that run continues the chain. A run
+    # arriving between the check and the dispatch, or the newer run failing
+    # to continue, can still leave two chains or none. Setting PASS_APPLY to
+    # anything but `enabled`, or cancelling the waiting run, ends it. While
+    # it waits, `next` keeps a hosted runner busy for up to ten minutes per
+    # pass.
     concurrency:
       group: pass-next
       cancel-in-progress: true
@@ -137,8 +167,47 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         shell: bash
         run: |
-          started=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .run_started_at)
+          # One GitHub 5xx must not end the chain (#1033): each call gets four
+          # tries, 2, 4 and 8 seconds apart, and none may hang the job.
+          retry() {
+            local try
+            for try in 1 2 3 4; do
+              timeout 30 "$@" && return 0
+              echo "attempt $try of '$1 $2' failed" >&2
+              if (( try < 4 )); then sleep $(( 2 ** try )); fi
+            done
+            echo "::error::'$1 $2' failed four times" >&2
+            return 1
+          }
+          started=$(retry gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .run_started_at)
           start=$(date -d "${started:?no start time for run $RUN_ID}" +%s)
           wait=$(( start + 600 - $(date +%s) ))
+          if (( wait > 600 )); then wait=600; fi
           if (( wait > 0 )); then sleep "$wait"; fi
-          gh workflow run poll.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" -f apply=true
+          # Applying runs are the schedule's (PASS_APPLY is enabled here) and
+          # those dispatched with apply, which run-name marks. The newest 200
+          # must reach back to this run, else a newer one may be unseen.
+          newer() {
+            local runs
+            runs=$(retry gh run list --repo "$GITHUB_REPOSITORY" --workflow poll.yml --branch "$DEFAULT_BRANCH" --limit 200 \
+              --json databaseId,status,createdAt,event,displayTitle,headBranch) || return 1
+            jq -r --argjson id "$RUN_ID" --arg branch "$DEFAULT_BRANCH" '
+              (map(select(.databaseId == $id)) | first // error("run \($id) is not among the newest runs")) as $me
+              | map(select(.databaseId != $id and .headBranch == $branch
+                  and (.status | IN("queued", "waiting", "pending", "requested", "in_progress"))
+                  and (.event == "schedule" or (.event == "workflow_dispatch" and .displayTitle == "pass (apply)"))
+                  and [.createdAt, .databaseId] > [$me.createdAt, $me.databaseId]))
+              | first.databaseId // empty' <<< "$runs"
+          }
+          # A dispatch that errored may still have been accepted, so list the
+          # runs again before each try; that narrows, but cannot rule out, a
+          # second chain.
+          for try in 1 2 3 4; do
+            next=$(newer)
+            if [[ -n $next ]]; then echo "run $next continues the chain; not starting another"; exit 0; fi
+            if timeout 30 gh workflow run poll.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" -f apply=true; then exit 0; fi
+            echo "attempt $try of 'gh workflow run' failed" >&2
+            if (( try < 4 )); then sleep $(( 2 ** try )); fi
+          done
+          echo "::error::'gh workflow run' failed four times" >&2
+          exit 1

@@ -84,7 +84,8 @@ gh workflow run dispatch.yml -R cgwalters-forge/tracker \
 
 `KIND` is implement, review, fix, triage or research; `N` is an issue, or a
 pull request for review and fix; `OWNER/REPO` must be listed in
-`.github/agentic-job/dispatch.toml` (`fix.toml` for a fix).
+`.github/agentic-job/dispatch.toml` (`fix.toml` for a fix), or, for a
+midstream fork, in `midstream.toml` and `midstream-fix.toml` instead.
 
 Runs push as `cgwalters-bot`, and apply pushes a branch to a repository
 that account owns only if the repository's default branch has
@@ -256,6 +257,13 @@ the credentials above brings up a coordinator from nothing:
    it with `gh run watch RUN -R cgwalters-forge/tracker --exit-status`.
    It succeeds, and its summary previews
    the epics and pull requests the board and `gh pr list` show as open.
+   This preview writes nothing and starts no next pass. Resuming the board
+   is a different step, `-f apply=true` with `PASS_APPLY` `enabled`: that
+   run starts a chain, and if one is already running, whichever chain has
+   the older run stops at its next dispatch, leaving one. Two runs started
+   within moments of each other's check can still both continue, and the
+   surviving run can still fail or be cancelled, so check `gh run list -R
+   cgwalters-forge/tracker -w poll.yml` a pass later.
 5. Dispatch one research run, `gh workflow run dispatch.yml -R
    cgwalters-forge/tracker -f kind=research -f repo=cgwalters-forge/tracker
    -f item=507 -f task="$(cat BRIEFFILE)"`, with a brief asking for a short

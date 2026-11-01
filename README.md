@@ -91,9 +91,12 @@ A scheduled pass only previews unless the repository variable `PASS_APPLY`
 is `enabled`. By hand, `gh workflow run poll.yml` previews and
 `-f apply=true` applies. While `PASS_APPLY` is `enabled`, each applying pass
 starts the next one ten minutes after its own start, since GitHub drops most
-of the `*/10` schedule. There is only one such chain, since a newer applying
-pass replaces the waiting one; setting the variable to anything else, or
-cancelling the run that is waiting, ends it. Every pass is capped at eight agent runs, twenty
+of the `*/10` schedule. A pass does not start the next while a newer
+applying run on the default branch is still to finish, so a second chain,
+say from an applying pass by hand, usually folds into the newer one; a run
+arriving during that check, or a newer run that never continues, can still
+leave two chains or none. Setting the variable to anything else, or
+cancelling the run that is waiting, ends the chain. Every pass is capped at eight agent runs, twenty
 other writes and fifty Status changes (more refuses the Status stage, a
 preview too, until someone has looked); raise them in `poll.yml` once the
 passes have been watched. New work goes through the board: an open issue
@@ -106,6 +109,15 @@ is removed. A fix run can request one `add_comment` explaining why it
 cannot safely change the pull request, without a push (opt-in in
 `.github/agentic-job/fix.toml`); the unchanged head is what stops the fix
 rounds.
+
+Apply opens complete work ready for review (`ready_when_complete` in
+`dispatch.toml` and `fix.toml`), except on a midstream fork, a repository
+with the `bot-midstream` topic, whose main tracks upstream (#336): there
+every pull request stays a draft. `dispatch.yml` gives those targets
+`midstream.toml` and `midstream-fix.toml` instead, by those files' `repos`,
+which a fork given the topic must join before it is dispatched to.
+cgwalters-review skips drafts, so a midstream pull request gets no automatic
+review; `/review` still works.
 
 ### Broker outages
 
@@ -347,11 +359,13 @@ a version bump that was never released. `agent-board release-train --config
 
 Every workflow that builds agent-board pins the same commit as
 `AGENT_BOARD_REV`; `just agent-board-pin`, part of `just test` in CI, fails
-when they differ. Hourly, `.github/workflows/agent-board-pin.yml` runs `just
-bump-agent-board`: when agent-board's main is ahead of the pin and all its
-check runs passed, it opens or updates one pull request from the bot's fork
-(branch `agent-board-pin`) moving every pin to it, listing the commits in
-between, and the review and the pass take it like any bot PR. It is off
+when they differ. `.github/workflows/agent-board-pin.yml` runs `just
+bump-agent-board`, started by the pass when agent-board's main is not the
+pin and has no pin PR yet, and hourly as a fallback: when agent-board's
+main is ahead of the pin and all its check runs passed, it opens or updates
+one pull request from the bot's fork (branch `agent-board-pin`) moving
+every pin to it, listing the commits in between, and the review and the
+pass take it like any bot PR. It is off
 unless the repository variable `AGENT_BOARD_PIN` is `enabled`, and uses
 `CGWALTERS_BOT_PAT`, which needs the workflows permission on the fork.
 

@@ -5,7 +5,118 @@
 set positional-arguments
 
 # Every test of the files under .github.
-test: test-config test-supervisor-config test-supervisor-workflow test-review-gate test-forge-sync test-weekly-material agent-board-pin
+test: test-config test-supervisor-config test-supervisor-workflow test-poll-bounds test-poll-next test-review-gate test-forge-sync test-weekly-material agent-board-pin
+
+# poll must pass both of the fix bounds files dispatch selects per target.
+test-poll-bounds:
+    #!/usr/bin/env node
+    const assert = require('node:assert/strict');
+    const poll = require('node:fs').readFileSync('.github/workflows/poll.yml', 'utf8');
+    const command = /"\$AGENT_BOARD" pass .*\\\n(?: {12}.*\\\n)* {12}.*\n/.exec(poll)?.[0];
+    assert.ok(command, 'the agent-board pass command');
+    assert.deepEqual([...command.matchAll(/--fix-bounds (\S+)/g)].map(m => m[1]),
+      ['.github/agentic-job/fix.toml', '.github/agentic-job/midstream-fix.toml']);
+    console.log('ok poll passes both fix bounds files to agent-board pass');
+
+# poll.yml's `next` step as written, with gh and sleep mocked: after its
+# sleep it dispatches unless a newer applying run on the default branch is
+# still to finish, and fails without dispatching when it cannot tell (#1019).
+# Each GitHub call is tried four times, and before retrying a dispatch it
+# lists the runs again, since the failed one may have started a run (#1033).
+test-poll-next:
+    #!/usr/bin/env node
+    const assert = require('node:assert/strict');
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const path = require('node:path');
+    const { spawnSync } = require('node:child_process');
+    const workflow = fs.readFileSync('.github/workflows/poll.yml', 'utf8');
+    const script = /- name: Start the next pass ten minutes after this one started\n(?: {8}.*\n)*? {8}run: \|\n((?: {10}.*\n)+)/
+      .exec(workflow)[1].replace(/^ {10}/gm, '');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'poll-next-'));
+    const bin = path.join(dir, 'bin');
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(bin, 'sleep'), '#!/usr/bin/env bash\necho "sleep $*" >> "$MOCK_LOG"\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(bin, 'gh'), `#!/usr/bin/env bash
+    echo "gh $*" >> "$MOCK_LOG"
+    case "$1 $2" in
+      "api "*) kind=lookup ;;
+      "run list") kind=list ;;
+      "workflow run") kind=dispatch ;;
+      *) exit 2 ;;
+    esac
+    echo >> "$MOCK_LOG.$kind"
+    fail=MOCK_FAIL_$kind
+    (( $(wc -l < "$MOCK_LOG.$kind") > \${!fail:-0} )) || exit 1
+    case $kind in
+      lookup) echo "$MOCK_STARTED" ;;
+      list) if [[ -e $MOCK_LOG.dispatch && -n $MOCK_SUCCESSOR ]]; then cat "$MOCK_SUCCESSOR"; else cat "$MOCK_RUNS"; fi ;;
+    esac
+    `.replace(/^ {4}/gm, ''), { mode: 0o755 });
+    const t0 = '2026-10-29T23:20:00Z', later = '2026-10-29T23:25:00Z', earlier = '2026-10-29T23:15:00Z';
+    const run = (id, createdAt, fields) => ({ databaseId: id, createdAt, status: 'queued', event: 'schedule',
+      displayTitle: 'pass', headBranch: 'main', ...fields });
+    const me = run(100, t0, { status: 'in_progress', event: 'workflow_dispatch', displayTitle: 'pass (apply)' });
+    const applying = { event: 'workflow_dispatch', displayTitle: 'pass (apply)' };
+    const statuses = ['queued', 'waiting', 'pending', 'requested', 'in_progress'];
+    for (const [name, runs, want, fail = {}] of [
+      ['lone chain', [me], 'dispatch'],
+      ['offset duplicate chain', [run(105, later, { ...applying, status: 'in_progress' }), me], 'skip'],
+      ['newer schedule run', [run(105, later), me], 'skip'],
+      ...statuses.map(status => [`newer ${status} run`, [run(105, later, { ...applying, status }), me], 'skip']),
+      ['older queued run', [me, run(90, earlier, applying)], 'dispatch'],
+      ['newer completed run', [run(105, later, { ...applying, status: 'completed' }), me], 'dispatch'],
+      ['newer cancelled run', [run(105, later, { ...applying, status: 'completed', conclusion: 'cancelled' }), me], 'dispatch'],
+      ['same second, higher id', [run(101, t0, applying), me], 'skip'],
+      ['same second, lower id', [me, run(99, t0, applying)], 'dispatch'],
+      ['newer preview', [run(105, later, { event: 'workflow_dispatch', displayTitle: 'pass' }), me], 'dispatch'],
+      ['newer run on another branch', [run(105, later, { ...applying, headBranch: 'other' }), me], 'dispatch'],
+      ['newer schedule run on another branch', [run(105, later, { headBranch: 'other' }), me], 'dispatch'],
+      ['this run beyond the list', [run(105, later, { status: 'completed' })], 'fail'],
+      ['run list fails four times', [me], 'fail', { list: 4 }],
+      ['transient lookup', [me], 'dispatch', { lookup: 1 }],
+      ['lookup fails four times', [me], 'fail', { lookup: 4 }],
+      ['transient listing', [me], 'dispatch', { list: 3 }],
+      ['transient dispatch', [me], 'dispatch', { dispatch: 1 }],
+      ['dispatch fails four times', [me], 'fail', { dispatch: 4 }],
+      ['dispatch errs but starts a run', [me], 'skip', { dispatch: 1, successor: [run(105, later, applying), me] }],
+    ]) {
+      const log = path.join(dir, 'log');
+      for (const kind of ['', '.lookup', '.list', '.dispatch']) fs.rmSync(log + kind, { force: true });
+      fs.writeFileSync(log, '');
+      fs.writeFileSync(path.join(dir, 'runs.json'), JSON.stringify(runs));
+      fs.writeFileSync(path.join(dir, 'successor.json'), JSON.stringify(fail.successor ?? []));
+      const started = new Date(Date.now() - 60_000).toISOString().replace(/\.\d+Z$/, 'Z');
+      const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, MOCK_LOG: log, MOCK_STARTED: started,
+          MOCK_RUNS: path.join(dir, 'runs.json'), MOCK_SUCCESSOR: fail.successor ? path.join(dir, 'successor.json') : '',
+          MOCK_FAIL_lookup: `${fail.lookup ?? 0}`, MOCK_FAIL_list: `${fail.list ?? 0}`, MOCK_FAIL_dispatch: `${fail.dispatch ?? 0}`,
+          GH_TOKEN: 'unused', RUN_ID: '100', DEFAULT_BRANCH: 'main', GITHUB_REPOSITORY: 'o/r' },
+      });
+      // Mocked sleep returns at once; the check comes after it.
+      const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map(line => line.split(' ').slice(0, 3).join(' '));
+      const detail = `${name}: ${result.stdout}${result.stderr}`;
+      const tries = (call, n) => [...Array(n)].flatMap((_, i) => i ? [`sleep ${2 ** i}`, call] : [call]);
+      const lookups = tries('gh api repos/o/r/actions/runs/100', Math.min((fail.lookup ?? 0) + 1, 4));
+      assert.deepEqual(calls.slice(0, lookups.length + 1).map(c => c.replace(/^sleep \d{3}$/, 'sleep wait')),
+        [...lookups, ...(fail.lookup >= 4 ? [] : ['sleep wait'])], detail);
+      if ((fail.lookup ?? 0) < 4) assert.equal(calls[lookups.length + 1], 'gh run list', detail);
+      if (calls.includes('gh run list')) {
+        assert.match(fs.readFileSync(log, 'utf8'), /^gh run list --repo o\/r --workflow poll\.yml --branch main --limit 200 /m, detail);
+      }
+      const dispatches = calls.filter(c => c === 'gh workflow run').length;
+      const dispatched = dispatches > (fail.dispatch ?? 0);
+      assert.equal(result.status === 0 ? (dispatched ? 'dispatch' : 'skip') : 'fail', want, detail);
+      if (!fail.dispatch) assert.ok(!(result.status !== 0 && dispatches), detail);
+      assert.ok(dispatches <= 4 && calls.filter(c => c === 'gh run list').length <= 16, detail);
+      // A dispatch is only ever tried right after the runs were listed.
+      calls.forEach((c, i) => c === 'gh workflow run' && assert.equal(calls[i - 1], 'gh run list', detail));
+      if (fail.successor) assert.equal(dispatches, 1, detail);
+      if (dispatched) assert.match(fs.readFileSync(log, 'utf8'), /^gh workflow run poll\.yml --repo o\/r --ref main -f apply=true$/m, detail);
+      console.log(`ok ${name}: ${want}`);
+    }
+    fs.rmSync(dir, { recursive: true });
 
 # supervisor.yml's folded concurrency group and health `if`, evaluated as
 # JavaScript on events: a run the gate skips gets a group of its own
@@ -251,10 +362,13 @@ check-review-gate:
 # A repository's drift from the manifest (.github/forge-sync/repos.json,
 # #544), one line each, from its fetched files on stdin:
 # {"repo": ..., "review": <review.yml or null>, "dependabot": <dependabot.yml
-# or null>, "justfile": <bool>}. Fails on any drift, a repository the
-# manifest does not list, or an exemption that is unknown or gives no reason.
-# The YAML is parsed with yq (its first document), so only a job's `uses`
-# counts as a call of the reviewer, and every such call must be at the pin.
+# or null>, "justfile": <bool>, "renovate": <renovate.json or null>}. Fails
+# on any drift, a repository the manifest does not list, or an exemption that
+# is unknown or gives no reason. The YAML is parsed with yq (its first
+# document), so only a job's `uses` counts as a call of the reviewer, and
+# every such call must be at the pin. Only a manifest that sets
+# renovate_preset requires the Renovate config to list it in `extends`, so
+# that no repository's runner label goes stale unnoticed (#1054).
 forge-sync-drift manifest:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -265,8 +379,8 @@ forge-sync-drift manifest:
     drift=$(jq -r --slurpfile m "$1" --argjson rv "$review" --argjson dp "$dependabot" '
       $m[0] as $m | .repo as $r | (first($m.repos[] | select(.repo == $r)) // null) as $e
       | if $e == null then "\($r) \($path): expected an entry, found none" else ($e.exempt // {}) as $x
-      | ($x | to_entries[] | select((.key | IN("review", "dependabot", "justfile") | not) or (.value | type != "string" or length == 0))
-        | "\($r) \($path): expected exempt.\(.key) to be review, dependabot or justfile with a reason, found \(.value | tojson)"),
+      | ($x | to_entries[] | select((.key | IN("review", "dependabot", "justfile", "renovate") | not) or (.value | type != "string" or length == 0))
+        | "\($r) \($path): expected exempt.\(.key) to be review, dependabot, justfile or renovate with a reason, found \(.value | tojson)"),
         ("cgwalters-forge/actions/.github/workflows/cgwalters-review.yml@" as $call | "\($call)\($m.review_pin)" as $want
         | [$rv | objects | .jobs | objects | .[] | objects | .uses | strings] as $uses
         | [$uses[] | select(startswith($call))] as $calls
@@ -276,27 +390,45 @@ forge-sync-drift manifest:
           | (.schedule | objects | .interval) // "no interval" | tostring] as $i
         | select($x.dependabot == null and ($i == [] or any($i[]; . != "daily")))
         | "\($r) .github/dependabot.yml: expected a github-actions update with interval daily, found \(if .dependabot == null then "no file" elif $i == [] then "no github-actions update" else $i | join(", ") end)"),
-        (select($x.justfile == null and .justfile != true) | "\($r) Justfile: expected a root Justfile, found none")
+        (select($x.justfile == null and .justfile != true) | "\($r) Justfile: expected a root Justfile, found none"),
+        ($m.renovate_preset as $p | select($p != null and $x.renovate == null)
+        | if $p | type != "string" or length == 0 then "\($r) \($path): expected renovate_preset to be a preset name, found \($p | tojson)"
+          else .renovate as $text | (if $text == null then null else try ($text | fromjson) catch null end) as $rc
+          | select([$rc | objects | .extends | arrays | .[] | select(. == $p)] == [])
+          | "\($r) renovate.json: expected extends to list \($p), found \(if $text == null then "no file" elif $rc | type != "object" then "no JSON object" else $rc.extends // [] | tojson end)" end)
       end' --arg path "$1" <<< "$input")
     [[ -z $drift ]] || { echo "$drift"; exit 1; }
 
-# forge-sync-drift on each fixture under .github/forge-sync/testdata against
-# its manifest.json, passing for pass-* and reporting drift for the fixture's
-# repository otherwise; then on this
+# forge-sync-drift on each fixture under .github/forge-sync/testdata, and
+# under its renovate/ whose manifest sets renovate_preset, against the
+# manifest.json beside it, passing for pass-* and reporting drift for the
+# fixture's repository otherwise; then on this
 # repository's own files against the real manifest, so moving the pin in
-# review.yml fails here until review_pin moves with it.
+# review.yml fails here until review_pin moves with it, and dropping
+# .github/renovate.json or renovate_preset fails too.
 test-forge-sync:
     #!/usr/bin/env bash
     set -euo pipefail
-    dir=.github/forge-sync/testdata
-    for f in "$dir"/pass-*.json "$dir"/fail-*.json; do
-      want=fail; [[ $(basename "$f") == pass-* ]] && want=pass
-      got=pass; out=$({{ just_executable() }} forge-sync-drift "$dir/manifest.json" < "$f" 2> /dev/null) || got=fail
-      [[ $got == pass || $out == "$(jq -r .repo "$f") "* ]] || got="an error: $out"
-      [[ $got == "$want" ]] || { echo "$f: want $want, got $got" >&2; exit 1; }
-      echo "ok $f ($want)"
+    top=.github/forge-sync/testdata
+    for dir in "$top" "$top/renovate"; do
+      for f in "$dir"/pass-*.json "$dir"/fail-*.json; do
+        want=fail; [[ $(basename "$f") == pass-* ]] && want=pass
+        got=pass; out=$({{ just_executable() }} forge-sync-drift "$dir/manifest.json" < "$f" 2> /dev/null) || got=fail
+        [[ $got == pass || $out == "$(jq -r .repo "$f") "* ]] || got="an error: $out"
+        [[ $got == "$want" ]] || { echo "$f: want $want, got $got" >&2; exit 1; }
+        echo "ok $f ($want)"
+      done
     done
     bad=$(mktemp)
+    # Without renovate_preset no Renovate config is required; with one that
+    # is not a preset name every repository drifts.
+    {{ just_executable() }} forge-sync-drift "$top/manifest.json" < "$top/renovate/fail-no-renovate.json"
+    echo "ok no renovate_preset requires no Renovate config"
+    jq '.renovate_preset = 1' "$top/renovate/manifest.json" > "$bad"
+    if {{ just_executable() }} forge-sync-drift "$bad" < "$top/renovate/pass-extends-preset.json" > /dev/null 2>&1; then
+      echo "forge-sync-drift with renovate_preset 1: want fail, got pass" >&2; exit 1
+    fi
+    echo "ok forge-sync-drift refuses renovate_preset 1"
     for manifest in '{}' '{"repos": []}' '{"repos": [{}]}' '[' ''; do
       if [[ -n $manifest ]]; then echo "$manifest" > "$bad"; else rm -f "$bad"; fi
       if {{ just_executable() }} forge-sync "$bad" > /dev/null 2>&1; then
@@ -304,18 +436,26 @@ test-forge-sync:
       fi
       echo "ok forge-sync refuses manifest '${manifest:-<missing>}'"
     done
-    jq -n --rawfile review .github/workflows/review.yml --rawfile dependabot .github/dependabot.yml \
-      '{repo: "cgwalters-forge/tracker", $review, $dependabot, justfile: true}' |
-      {{ just_executable() }} forge-sync-drift .github/forge-sync/repos.json
+    self=$(jq -n --rawfile review .github/workflows/review.yml --rawfile dependabot .github/dependabot.yml \
+      --rawfile renovate .github/renovate.json '{repo: "cgwalters-forge/tracker", $review, $dependabot, justfile: true, $renovate}')
+    {{ just_executable() }} forge-sync-drift .github/forge-sync/repos.json <<< "$self"
     echo "ok this repository against .github/forge-sync/repos.json"
+    # The real manifest must keep requiring the preset of this repository.
+    if {{ just_executable() }} forge-sync-drift .github/forge-sync/repos.json <<< "$(jq '.renovate = null' <<< "$self")" > /dev/null 2>&1; then
+      echo "this repository without .github/renovate.json: want drift, got none" >&2; exit 1
+    fi
+    echo "ok this repository without .github/renovate.json drifts"
 
 # forge-sync-drift on the default branch of every repository in the
 # manifest, read through the contents API (a 404 is a missing file); fails
-# if any repository drifted or could not be read.
+# if any repository drifted or could not be read. The step output `failed`
+# lists those repositories and `drift`, a JSON string, their drift lines
+# (forge-sync.yml).
 forge-sync manifest=".github/forge-sync/repos.json":
     #!/usr/bin/env bash
     set -euo pipefail
     err=$(mktemp)
+    trap 'rm -f "$err"' EXIT
     fetch() {
       local body
       if body=$(gh api "repos/$1/contents/$2" -H 'Accept: application/vnd.github.raw' 2> "$err"); then jq -Rs . <<< "$body"
@@ -323,16 +463,29 @@ forge-sync manifest=".github/forge-sync/repos.json":
       else echo "::error::$1: could not read $2: $(cat "$err")" >&2; return 1; fi
     }
     repos=$(jq -er '.repos | select(length > 0 and all(.[]; .repo | type == "string")) | .[].repo' "$1") || { echo "::error::$1: expected a manifest listing repos" >&2; exit 1; }
-    failed=0
+    # The Renovate config is read only when the manifest asks for a preset,
+    # from the two JSON places Renovate looks for it that the forge uses.
+    preset=$(jq -r '.renovate_preset // empty' "$1")
+    failed=() drift=
     for repo in $repos; do
-      if input=$(jq -n --arg repo "$repo" --argjson review "$(fetch "$repo" .github/workflows/review.yml)" \
-          --argjson dependabot "$(fetch "$repo" .github/dependabot.yml)" --argjson j "$(fetch "$repo" Justfile)" \
-          '{$repo, $review, $dependabot, justfile: ($j != null)}') &&
-        {{ just_executable() }} forge-sync-drift "$1" <<< "$input"; then
-        echo "ok $repo"
-      else failed=1; fi
+      out= renovate=null
+      if j=$(fetch "$repo" Justfile) && if [[ $j == null ]]; then j=$(fetch "$repo" justfile); fi &&
+        if [[ -n $preset ]]; then
+          renovate=$(fetch "$repo" renovate.json) && if [[ $renovate == null ]]; then renovate=$(fetch "$repo" .github/renovate.json); fi
+        fi &&
+        input=$(jq -n --arg repo "$repo" --argjson review "$(fetch "$repo" .github/workflows/review.yml)" \
+          --argjson dependabot "$(fetch "$repo" .github/dependabot.yml)" --argjson j "$j" --argjson renovate "$renovate" \
+          '{$repo, $review, $dependabot, justfile: ($j != null), $renovate}') &&
+        out=$({{ just_executable() }} forge-sync-drift "$1" <<< "$input"); then
+        echo "ok $repo"; continue
+      fi
+      out=${out:-"$repo: could not be read or checked"}
+      echo "$out"; drift+=$out$'\n'; failed+=("$repo")
     done
-    exit "$failed"
+    # The lines quote the repositories' files, so the output is capped.
+    drift=${drift%$'\n'}
+    printf 'failed=%s\ndrift=%s\n' "${failed[*]}" "$(jq -nc --arg d "${drift:0:50000}" '$d')" >> "${GITHUB_OUTPUT:-/dev/null}"
+    [[ ${#failed[@]} -eq 0 ]]
 
 # The runner configuration's checks; those that run `agentic-job` skip where
 # it is not installed.
