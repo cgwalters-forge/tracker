@@ -25,11 +25,13 @@
   "unqueuedWaitHours": 1,
   "unclosedWaitHours": 1,
   "paceMarginPercent": 25,
+  "capacityMarginPercent": 25,
   "usageStaleMinutes": 45,
   "supervisorWorkflow": "supervisor.yml",
   "schedulerJob": "pass",
   "implementBranchPrefix": "dispatch/implement/agent-run-",
   "agent": {
+    "passConfig": ".github/pass.json",
     "pool": "claude",
     "cooldownHours": 1,
     "skipUnchangedFailures": false,
