@@ -5,7 +5,41 @@
 set positional-arguments
 
 # Every test of the files under .github.
-test: test-config test-supervisor-config test-supervisor-workflow test-poll-bounds test-poll-next test-review-gate test-forge-sync test-weekly-material agent-board-pin
+test: test-config test-supervisor-config test-supervisor-workflow test-poll-bounds test-poll-next test-review-caller test-review-gate test-forge-sync test-weekly-material agent-board-pin
+
+# Guard the disabled cutover until a compatible wrapper is pinned. Replace
+# these guards with dispatch/exact-head/record-only contract coverage then.
+test-review-caller:
+    #!/usr/bin/env node
+    const assert = require('node:assert/strict');
+    const fs = require('node:fs');
+    const { runInNewContext } = require('node:vm');
+    const workflow = fs.readFileSync('.github/workflows/review.yml', 'utf8');
+    const pass = JSON.parse(fs.readFileSync('.github/pass.json', 'utf8'));
+    assert.ok(!Object.hasOwn(pass.pr, 'reviewPools'), 'reviewPools is global across follow');
+    assert.doesNotMatch(workflow, /^  workflow_dispatch:/m);
+    assert.doesNotMatch(workflow, /\$\{\{[^\n]*(?:inputs\.|vars\.REVIEW_(?:RECORD_ONLY|POOLS))/);
+    assert.doesNotMatch(workflow, /^    with:/m, 'do not guess inputs for the old wrapper');
+    const gate = /^    if: >-\n((?: {6}.*\n)+)/m.exec(workflow)?.[1].trim();
+    assert.ok(gate);
+    for (const [event_name, pull, body, want] of [
+      ['pull_request_target', false, '', true],
+      ['issue_comment', true, '/review', true],
+      ['issue_comment', true, '/review again', true],
+      ['issue_comment', true, 'not /review', false],
+      ['issue_comment', false, '/review', false],
+      ['workflow_dispatch', false, '', false],
+    ]) {
+      const github = { event_name, event: { issue: { pull_request: pull }, comment: { body } } };
+      assert.equal(runInNewContext(gate, { github, startsWith: (s, prefix) => s.startsWith(prefix) }), want,
+        `${event_name}: ${body}`);
+    }
+    assert.match(workflow, /^    types: \[opened, synchronize, reopened, ready_for_review\]$/m);
+    assert.match(workflow, /^    types: \[created\]$/m);
+    for (const [file, events] of [['review', '["pull_request_target", "pull_request"]'], ['review-command', '["issue_comment"]']]) {
+      assert.ok(fs.readFileSync(`workflow/${file}.toml`, 'utf8').includes(`events = ${events}`));
+    }
+    console.log('ok legacy review routing and paced-review default-off guards (compatible wrapper pending)');
 
 # poll must pass both of the fix bounds files dispatch selects per target.
 test-poll-bounds:
