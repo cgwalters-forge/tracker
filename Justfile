@@ -14,6 +14,7 @@ test-review-caller:
     const assert = require('node:assert/strict');
     const fs = require('node:fs');
     const { runInNewContext } = require('node:vm');
+    const { execFileSync } = require('node:child_process');
     const workflow = fs.readFileSync('.github/workflows/review.yml', 'utf8');
     const pass = JSON.parse(fs.readFileSync('.github/pass.json', 'utf8'));
     assert.ok(!Object.hasOwn(pass.pr, 'reviewPools'), 'reviewPools is global across follow');
@@ -36,8 +37,20 @@ test-review-caller:
     }
     assert.match(workflow, /^    types: \[opened, synchronize, reopened, ready_for_review\]$/m);
     assert.match(workflow, /^    types: \[created\]$/m);
-    for (const [file, events] of [['review', '["pull_request_target", "pull_request"]'], ['review-command', '["issue_comment"]']]) {
-      assert.ok(fs.readFileSync(`workflow/${file}.toml`, 'utf8').includes(`events = ${events}`));
+    // Parse the actual trigger tables: commented-out or misplaced fields
+    // must not stand in for command authorization or fork admission.
+    const files = ['workflow/review.toml', 'workflow/review-command.toml'];
+    const bounds = JSON.parse(execFileSync('python3', ['-c',
+      'import json, sys, tomllib; print(json.dumps([tomllib.load(open(p, "rb")) for p in sys.argv[1:]]))', ...files], { encoding: 'utf8' }));
+    const triggers = [
+      { events: ['pull_request_target', 'pull_request'], roles: ['all'], bots: ['dependabot[bot]'], forks: true },
+      { events: ['issue_comment'], roles: ['admin', 'maintain', 'write'], bots: [], forks: true, commands: ['/review'] },
+    ];
+    for (const [i, bound] of bounds.entries()) {
+      assert.deepEqual(bound.trigger, triggers[i], files[i]);
+      assert.deepEqual(bound.hosts, ['github.com'], files[i]);
+      assert.deepEqual(bound.repos, ['cgwalters-forge/tracker'], files[i]);
+      assert.deepEqual(bound.bases, ['main'], files[i]);
     }
     console.log('ok legacy review routing and paced-review default-off guards (compatible wrapper pending)');
 

@@ -148,9 +148,10 @@ same-repository branches and `/review` retain event reviews.
 **Wrapper dependency is not satisfied.** The completed actions#67 integration
 (`5906e6745c4e3e1c68b698dacf409a452c727d08`) composes the old consumer, not this
 contract. Tracker pins actions `d8e22f71b2abbe5f41306a0c7ef1b6c3d2829cac`, whose
-consumer calls pin agentic-job v0.6.2 commit
-`258dc11ca7fe1798836976c0424274d1498e22cb`. Even actions main at
-`bfc71cd939cfecde7d4da4eadb15d7560f73423f` declares no workflow-call inputs and
+consumer calls use the agentic-job **tag** `v0.6.2`, observed resolving to
+`258dc11ca7fe1798836976c0424274d1498e22cb`; the outer wrapper SHA does not make
+that transitive tag immutable. Re-inspected actions main at
+`081fa9b4547ee527cd46d41241c8c081294674e1` pins that consumer SHA but still declares no workflow-call inputs and
 has neither paced dispatch nor record-only routing. Do not forward guessed
 inputs, copy the consumer into tracker, or treat its merge as wrapper deployment.
 The caller's dispatch/exact-head/record-only contract tests must accompany the
@@ -165,10 +166,10 @@ is global across `follow`, not scoped to tracker or `workRepositories`.
 
 | Repository (under cgwalters-forge) | Observed default-branch commit | Blocker |
 | --- | --- | --- |
-| agentic-job | `bba0bebc135eeda770990097ce8504a15e09b877` | Consumer contract exists; operator settings unverified |
+| agentic-job | `58d78d9823e537bd90d96b198a906aeb11d12d85` | Consumer contract exists; operator settings unverified |
 | agent-board | `c6226b3d2d69263c8c424f778a5778062309e86f` | Event-only caller, actions `d8e22f7` |
-| tracker | `ddfe83d00587370cbcb71d82a2d7d2122aae17fe` | Event-only caller, actions `d8e22f7` |
-| actions | `bfc71cd939cfecde7d4da4eadb15d7560f73423f` | Event-only caller, local incompatible wrapper |
+| tracker | `b5f42a22449744bbee3af0af4f3d99fff577f8c9` | Event-only caller, actions `d8e22f7` |
+| actions | `081fa9b4547ee527cd46d41241c8c081294674e1` | Event-only caller, local incompatible wrapper |
 | review | `fa9f1954fad81c5de78fffcfc330840421ca69d4` | Event-only caller, agentic-job v0.6.4 |
 | agenthome | `6d6d81fabd6eaaef31b567cc713317d36831bce7` | Event-only caller, actions `bc0ea82` |
 | forge-infra | `9896d511523f5cbbeb3e9f20b5ef71bb0ed85d23` | Event-only caller, actions `d8e22f7` |
@@ -228,6 +229,11 @@ paced reviews and inspect ambiguous claims, then unset `REVIEW_RECORD_ONLY` in
 every affected repository before restoring event-only operation and resuming.
 Do not revert callers to an incompatible wrapper while paced starts remain
 enabled. Existing exact-head approvals and reservation records are not reset.
+Unsetting record-only does not replay events for heads already left pending.
+Inventory those heads after draining paced runs, and have a write-authorized
+operator request `/review` on each still-open, still-unreviewed current head.
+Check for an existing active review before requesting one, then verify its
+verdict/status names the current head; do not push or reopen merely to retrigger.
 
 ### Broker outages
 
