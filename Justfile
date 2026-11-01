@@ -488,9 +488,9 @@ forge-sync manifest=".github/forge-sync/repos.json":
     [[ ${#failed[@]} -eq 0 ]]
 
 # The runner configuration's checks; those that run `agentic-job` skip where
-# it is not installed.
+# it is not installed. The build goes outside the source tree.
 test-config:
-    node --test .github/agentic-job/config.test.cjs
+    cargo test --locked --manifest-path .github/agentic-job/config-test/Cargo.toml --target-dir "{{ env('CARGO_TARGET_DIR', cache_directory() / 'tracker-config-test') }}"
 
 # The shipped supervisor settings through the binary supervisor.yml pins
 # (AGENT_BOARD, from build-supervisor-agent-board): a cap the executor

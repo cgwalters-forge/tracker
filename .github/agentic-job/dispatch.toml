@@ -34,7 +34,7 @@ max_patch_files = 50
 # a checkpoint or a run stopped at a limit as a draft (agentic-job's
 # docs/safe-outputs.md, "Ready or draft"). Without it every pull request is
 # a draft and the poll stops on each as "a draft with no checkpoint" (#646).
-# config.test.cjs keeps it set, here and in fix.toml, and unset in the
+# config-test/ keeps it set, here and in fix.toml, and unset in the
 # midstream bounds.
 create_pull_request = { max = 1, ready_when_complete = true }
 add_comment = { max = 1 }
