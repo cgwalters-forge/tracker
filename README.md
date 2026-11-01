@@ -119,6 +119,122 @@ which a fork given the topic must join before it is dispatched to.
 cgwalters-review skips drafts, so a midstream pull request gets no automatic
 review; `/review` still works.
 
+### Paced-review cutover
+
+**Prepared, not activated (1 November 2026).** The threat is duplicate inference
+starts for one PR head: an automatic event review plus a pass-dispatched review
+would spend outside the pass's pace/WIP accounting. Use the existing coordinated
+record-only/dispatch mechanism, not a second scheduler or a caller-side policy.
+This checkout leaves `pr.reviewPools` absent in `.github/pass.json` and keeps
+legacy automatic events and `/review`. No variables, credentials, merge policy
+or live reviews were changed. Source merge does not deploy the settings below.
+
+The producer is already pinned: `AGENT_BOARD_REV` is
+`fb0877eeec3750ab8f47fd9cd641347e12c03ee8`, containing agent-board#494
+(`88d51dbbef245dca643b9017a18190ca0b9c741b`). Its
+[review contract](https://github.com/cgwalters-forge/agent-board/blob/fb0877eeec3750ab8f47fd9cd641347e12c03ee8/docs/pass.md#reviews)
+dispatches string inputs `pr`, `head`, `pool` on the target default branch and
+recognizes `review OWNER/REPO#N HEAD (POOL)` as the run identity.
+
+The consumer implementation is merged in agentic-job#2681
+(`9c7027b5caf86f43907ab06ad3c78f5d093a6650`), inspected at
+`bba0bebc135eeda770990097ce8504a15e09b877`. It validates a positive PR number,
+full head SHA and trusted `REVIEW_POOLS` mapping; policy binds the open,
+non-draft PR at exactly that head before inference. `REVIEW_RECORD_ONLY` is a
+JSON array of immutable author IDs: admitted fork PR events for those authors
+record pending without inference (or carry a proven approval); other authors,
+same-repository branches and `/review` retain event reviews.
+
+**Wrapper dependency is not satisfied.** The completed actions#67 integration
+(`5906e6745c4e3e1c68b698dacf409a452c727d08`) composes the old consumer, not this
+contract. Tracker pins actions `d8e22f71b2abbe5f41306a0c7ef1b6c3d2829cac`, whose
+consumer calls use the agentic-job **tag** `v0.6.2`, observed resolving to
+`258dc11ca7fe1798836976c0424274d1498e22cb`; the outer wrapper SHA does not make
+that transitive tag immutable. Re-inspected actions main at
+`081fa9b4547ee527cd46d41241c8c081294674e1` pins that consumer SHA but still declares no workflow-call inputs and
+has neither paced dispatch nor record-only routing. Do not forward guessed
+inputs, copy the consumer into tracker, or treat its merge as wrapper deployment.
+The caller's dispatch/exact-head/record-only contract tests must accompany the
+eventual compatible wrapper pin; today's regression tests guard only legacy
+routing and disabled activation.
+
+#### Followed caller inventory
+
+Read-only default-branch observations below are snapshots, not deployment
+attestations. Every path is `.github/workflows/review.yml`. `pr.reviewPools`
+is global across `follow`, not scoped to tracker or `workRepositories`.
+
+| Repository (under cgwalters-forge) | Observed default-branch commit | Blocker |
+| --- | --- | --- |
+| agentic-job | `58d78d9823e537bd90d96b198a906aeb11d12d85` | Consumer contract exists; operator settings unverified |
+| agent-board | `c6226b3d2d69263c8c424f778a5778062309e86f` | Event-only caller, actions `d8e22f7` |
+| tracker | `b5f42a22449744bbee3af0af4f3d99fff577f8c9` | Event-only caller, actions `d8e22f7` |
+| actions | `081fa9b4547ee527cd46d41241c8c081294674e1` | Event-only caller, local incompatible wrapper |
+| review | `fa9f1954fad81c5de78fffcfc330840421ca69d4` | Event-only caller, agentic-job v0.6.4 |
+| agenthome | `6d6d81fabd6eaaef31b567cc713317d36831bce7` | Event-only caller, actions `bc0ea82` |
+| forge-infra | `9896d511523f5cbbeb3e9f20b5ef71bb0ed85d23` | Event-only caller, actions `d8e22f7` |
+| cgwalters-forge.github.io | `f64783d7b33a2dafa8817d047f156291b362b3fd` | Event-only caller, actions `bc0ea82` |
+| bootc (forge branch) | `3ff59436aa70ea4b3561fd99ac463aaa44ad53ac` | No review.yml (404) |
+| composefs-rs (forge branch) | `c8f8eb7384bdea4aa40018f446ed3bc0fbf05ba9` | No review.yml (404) |
+
+No external callers were edited. Missing workflows remain blockers, not implied
+exemptions because their PRs are drafts or merging is disabled.
+
+#### Coordinated activation and rollback (operator work, not run here)
+
+First merge a compatible actions wrapper that preserves public-repository,
+author/bot and write-authorized `/review` admission. Review its immutable
+consumer pin and tailnet/broker admission of its `job_workflow_ref`. Then update
+each managed caller, with required string dispatch inputs `pr`, `head`, `pool`,
+the producer's exact run-name above, and forwarding only those declared wrapper
+inputs. Policy/head validation, pool lookup, record-only decisions, head
+supersession and status submission stay in the tools. Add regression coverage
+for dispatch routing, stale/invalid heads, missing/unknown pools, selected-pool
+identity, record-only fork events, unaffected `/review` and default-off mode.
+
+Before activation, re-inventory **all ten** followed callers at their deployed
+default-branch SHAs. Do not enable while any lacks the contract. Verify the bot
+token can dispatch `review.yml` (`actions: write`) in each, and that each pool
+maps to the same agent/model the producer paces. Operator-controlled repository
+variables in **each followed repository** must supply:
+
+* `REVIEW_POOLS` = `{"claude":{"agent":"claude","model":"claude-opus-5-5"},"openai":{"agent":"opencode","model":"praxis/gpt-6.1-sol"}}`
+  (the current tracker pool choices, not a workflow input). Check each caller's
+  runner/configuration and configuration-repository settings for both agents.
+* `REVIEW_RECORD_ONLY` = `[17814078]` for the configured `cgwalters-bot` author
+  (ID read from GitHub); leave unset/`[]` before the cutover. Verify the author
+  remains admitted by existing policy/bounds; record-only grants no admission.
+
+Once compatible callers are deployed, pause applying passes and drain existing
+event reviews. Coordinate those record-only settings with tracker
+`.github/pass.json` `pr.reviewPools = ["claude", "openai"]`, then resume passes.
+Do not enable pools first (double reviews) or leave record-only on without
+resuming the pass (heads wait indefinitely). Preserve claims/reservations and
+the existing caps (`wip: 8`, eight dispatches and twenty writes per pass; the
+producer also limits review starts to three per pass). Preview before applying;
+neither preview nor merging source is a live exact-head proof.
+
+Later, on one eligible bot fork PR, record its exact head SHA, pending event
+status with no agent inference, and the single dispatched run whose title names
+that PR/head/pool. Verify the submitted verdict/status is on that head, and a
+later push cannot approve the replacement head with the old verdict. Observe
+full-WIP and held-pool passes starting no review, then a free-slot/in-pace pass
+starting at most one. Observe another pass and an event reopen/synchronize
+without a duplicate start for the same head; inspect reservations if GitHub's
+dispatch answer was lost, never delete them to force a retry. Retain run URLs,
+SHAs and pass summaries as evidence. No such live verification ran in this PR.
+
+Rollback: pause applying passes, remove `pr.reviewPools`, cancel/drain outstanding
+paced reviews and inspect ambiguous claims, then unset `REVIEW_RECORD_ONLY` in
+every affected repository before restoring event-only operation and resuming.
+Do not revert callers to an incompatible wrapper while paced starts remain
+enabled. Existing exact-head approvals and reservation records are not reset.
+Unsetting record-only does not replay events for heads already left pending.
+Inventory those heads after draining paced runs, and have a write-authorized
+operator request `/review` on each still-open, still-unreviewed current head.
+Check for an existing active review before requesting one, then verify its
+verdict/status names the current head; do not push or reopen merely to retrigger.
+
 ### Broker outages
 
 Set the repository variable `BROKER_OUTAGE=apply` to enable the
