@@ -5,7 +5,7 @@
 set positional-arguments
 
 # Every test of the files under .github.
-test: test-config test-supervisor-config test-supervisor-workflow test-poll-bounds test-poll-next test-review-gate test-forge-sync test-weekly-material agent-board-pin
+test: test-config test-pass-config test-supervisor-config test-supervisor-workflow test-poll-bounds test-poll-next test-review-gate test-forge-sync test-weekly-material agent-board-pin
 
 # poll must pass both of the fix bounds files dispatch selects per target.
 test-poll-bounds:
@@ -491,6 +491,39 @@ forge-sync manifest=".github/forge-sync/repos.json":
 # it is not installed. The build goes outside the source tree.
 test-config:
     cargo test --locked --manifest-path .github/agentic-job/config-test/Cargo.toml --target-dir "{{ env('CARGO_TARGET_DIR', cache_directory() / 'tracker-config-test') }}"
+
+# Check-only retries must not enable failed agent/review recovery or
+# stacked-retarget branch updates. The real pass parser must accept the
+# shipped config before refusing an intentionally invalid replay, without
+# credentials or API calls. CI supplies the common workflow pin as AGENT_BOARD.
+test-pass-config:
+    #!/usr/bin/env node
+    const assert = require('node:assert/strict');
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const path = require('node:path');
+    const { spawnSync } = require('node:child_process');
+    const config = JSON.parse(fs.readFileSync('.github/pass.json', 'utf8'));
+    assert.equal(config.pr.checkReruns, true, 'deploy only pre-fix check retries');
+    assert.ok(config.reruns === undefined || config.reruns === false, 'blanket reruns stay off');
+    if (!process.env.AGENT_BOARD) {
+      console.log('skipped parser check: set AGENT_BOARD to the built pinned binary');
+    } else {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pass-config-'));
+      try {
+        const replay = path.join(dir, 'invalid-replay.json');
+        fs.writeFileSync(replay, '{}');
+        const result = spawnSync(process.env.AGENT_BOARD, ['pass', '--config', '.github/pass.json', '--replay', replay], {
+          encoding: 'utf8', timeout: 10000, env: { ...process.env, GH_TOKEN: '', DISPATCH_TOKEN: '' },
+        });
+        assert.ifError(result.error);
+        assert.equal(result.status, 1, result.stdout + result.stderr);
+        assert.match(result.stderr, /not a pass replay \(expected agent-board\/pass-replay\/v1\)/);
+        console.log('ok supplied pass parser accepts shipped check-only config before refusing invalid replay');
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
 
 # The shipped supervisor settings through the binary supervisor.yml pins
 # (AGENT_BOARD, from build-supervisor-agent-board): a cap the executor
