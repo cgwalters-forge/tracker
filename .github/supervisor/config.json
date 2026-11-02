@@ -25,7 +25,7 @@
   "unqueuedWaitHours": 1,
   "unclosedWaitHours": 1,
   "paceMarginPercent": 25,
-  "capacityMarginPercent": 25,
+  "capacityMarginPercent": 10,
   "usageStaleMinutes": 45,
   "supervisorWorkflow": "supervisor.yml",
   "schedulerJob": "pass",
