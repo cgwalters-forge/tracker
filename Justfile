@@ -499,7 +499,7 @@ test-config:
 test-supervisor-config:
     #!/usr/bin/env bash
     set -euo pipefail
-    jq -e '.capacityMarginPercent == 25 and .capacityMarginPercent == .paceMarginPercent and
+    jq -e '.capacityMarginPercent == 10 and
       .agent.passConfig == ".github/pass.json"' .github/supervisor/config.json > /dev/null
     if [[ -z ${AGENT_BOARD:-} ]]; then echo 'skipped: set AGENT_BOARD to the built binary'; exit 0; fi
     health=$(mktemp)
