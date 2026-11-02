@@ -835,7 +835,9 @@ fn workflows_follow_our_own_repositories_at_main_review_excepted_and_pin_the_res
             seen += 1;
             // Except review.yml: its verdict is the only gate on .github/ here,
             // so the wrapper it calls moves only by a reviewed change to the pin.
-            let ok = match uses.starts_with(&owner) && file != "review.yml" {
+            // And the temporary wrapper-canary.yml, pinned to the pull request it tries.
+            let pinned = file == "review.yml" || file == "wrapper-canary.yml";
+            let ok = match uses.starts_with(&owner) && !pinned {
                 true => is_ref(uses, |rev| rev == "main"),
                 false => is_ref(uses, is_commit),
             };
