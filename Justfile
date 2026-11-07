@@ -1117,6 +1117,50 @@ test-architecture-review mode="test" id="B2588":
       }));
     });
 
+    // Prevent an appended audit from silently skipping unresolved candidates or
+    // counting matched questions as defects. Historical scoring stays frozen.
+    function validateSupplementalAudit(audit) {
+      const original = json('scoring.json').finding_dispositions;
+      const expected = original.filter(f => f.matched_by_feedback === null && f.audit === 'not audited')
+        .map(f => f.finding).sort();
+      const ids = audit.findings.map(f => f.finding);
+      assert.equal(new Set(ids).size, ids.length, 'duplicate supplemental finding');
+      assert.deepEqual([...ids].sort(), expected, 'exactly the eight remaining unmatched findings');
+      assert.equal(audit.id, 'supplemental-2026-11-07');
+      for (const f of audit.findings) {
+        assert.ok(['supported', 'unsupported', 'unresolved'].includes(f.mechanism), f.finding);
+        assert.ok(read('evaluation.md').includes(`### ${f.finding} — ${f.mechanism}`), f.finding);
+      }
+      const total = results.findings.defects.unmatched + results.findings.questions.unmatched;
+      assert.deepEqual(audit.prior, { ...results.unmatched_audit, total });
+      assert.equal(audit.new.audited, expected.length);
+      assert.equal(audit.new.total, expected.length);
+      assert.equal(audit.cumulative.audited, audit.prior.audited + audit.new.audited);
+      assert.equal(audit.cumulative.total, total);
+      for (const key of ['supported', 'unsupported', 'unresolved']) {
+        assert.equal(audit.new[key], audit.findings.filter(f => f.mechanism === key).length, key);
+        assert.equal(audit.cumulative[key], audit.prior[key] + audit.new[key], key);
+      }
+      assert.equal(audit.cumulative.audited, total);
+    }
+
+    test('supplemental static audit exactly covers remaining unmatched findings and denominators', () => {
+      const records = [...read('evaluation.md').matchAll(/<!-- supplemental-audit-2026-11-07 -->\n```json\n([^]*?)\n```/g)];
+      assert.equal(records.length, 1, 'one separately identified supplemental audit');
+      const audit = JSON.parse(records[0][1]);
+      validateSupplementalAudit(audit);
+      const broken = change => { const copy = structuredClone(audit); change(copy); assert.throws(() => validateSupplementalAudit(copy)); };
+      broken(a => a.findings.push(a.findings[0]));
+      broken(a => a.findings.pop());
+      broken(a => a.findings[0].finding = 'B2588 Q1');
+      broken(a => a.findings[0].mechanism = 'not audited');
+      broken(a => a.new.supported++);
+      broken(a => a.new.total++);
+      broken(a => a.prior.audited++);
+      broken(a => a.cumulative.audited--);
+      broken(a => a.cumulative.unresolved--);
+    });
+
 # Offline caller contracts; wrapper policy/submission is tested upstream.
 test-review-caller:
     #!/usr/bin/env node
