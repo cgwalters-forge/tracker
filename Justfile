@@ -1752,6 +1752,13 @@ forge-sync manifest=".github/forge-sync/repos.json":
 test-config:
     cargo test --locked --manifest-path .github/agentic-job/config-test/Cargo.toml --target-dir "{{ env('CARGO_TARGET_DIR', cache_directory() / 'tracker-config-test') }}"
 
+# Manual offline incident replay. Read-only source checkouts; build outside them.
+# actions must contain both recorded wrapper commits; policy is v0.6.10's SHA.
+test-fix-caller actions policy:
+    test "$(git -C "{{ policy }}" rev-parse HEAD)" = a5f7a3963fd41f3eb09c4406aa5bc8e30ee42be2
+    cargo build --locked --manifest-path "{{ policy }}/Cargo.toml" -p agentic-job --target-dir "{{ env('CARGO_TARGET_DIR', cache_directory() / 'tracker-fix-policy') }}"
+    node .github/agentic-job/config-test/tests/fix-caller.mjs "{{ actions }}" "{{ policy }}" "{{ env('CARGO_TARGET_DIR', cache_directory() / 'tracker-fix-policy') }}/debug/agentic-job"
+
 # The shipped supervisor settings through the binary supervisor.yml pins
 # (AGENT_BOARD, from build-supervisor-agent-board): a cap the executor
 # refuses would otherwise fail every pass after the merge. Empty checks and
