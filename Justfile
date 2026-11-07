@@ -5,7 +5,7 @@
 set positional-arguments
 
 # Every test of the files under .github.
-test: test-agent-board-install test-config test-dispatch-pool test-supervisor-config test-pass-config test-supervisor-workflow test-poll-bounds test-poll-next test-maintain-shadow test-review-caller test-review-gate test-forge-sync test-review-corpus test-review-refresh test-retro test-needs-you-fit agent-board-pin
+test: test-agent-board-install test-config test-dispatch-pool test-supervisor-config test-pass-config test-supervisor-workflow test-poll-bounds test-poll-next test-maintain-shadow test-review-caller test-review-gate test-forge-sync test-review-corpus test-review-refresh test-retro test-needs-you-fit test-approval-evidence agent-board-pin
 
 # Offline admission, pool step and research-only publication contract.
 test-retro:
@@ -1450,7 +1450,7 @@ test-needs-you-fit board="" review="":
     const [board, review] = process.argv.slice(2);
     const pass = JSON.parse(fs.readFileSync('.github/pass.json', 'utf8'));
     assert.deepEqual([pass.holds.repository, pass.holds.needsYou], ['cgwalters-forge/bot-ops', true]);
-    assert.ok(!pass.holds.approvalEvidence, 'approval evidence stays off (tracker#1336)');
+    assert.equal(pass.holds.approvalEvidence, true, 'compact evidence caller opt-in (tracker#1336)');
     // Gated by key, less its feature switches (agent-board#746).
     assert.ok(pass.pr.operatorPaths.some(p => p.split('#')[0] === '.github/pass.json'), 'the fixture approval is for an operator path');
     if (!board) {
@@ -1497,6 +1497,100 @@ test-needs-you-fit board="" review="":
       }
       const revision = execFileSync('git', ['-C', review, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
       console.log(`ok needs-you settings, the fixture at ${pin} and review ${revision}'s reading of it`);
+    }
+    main().catch(error => { console.error(error); process.exitCode = 1; });
+
+# Offline caller settings; optional exact-source producer/consumer contract probe.
+# BOARD and REVIEW are read-only checkouts; no publication or controller runs.
+test-approval-evidence board="" review="":
+    #!/usr/bin/env node
+    const assert = require('node:assert/strict');
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const { pathToFileURL } = require('node:url');
+    const { execFileSync } = require('node:child_process');
+    const [board, review] = process.argv.slice(2);
+    const pass = JSON.parse(fs.readFileSync('.github/pass.json'));
+    assert.equal(pass.holds.approvalEvidence, true);
+    const rollback = structuredClone(pass);
+    delete rollback.holds.approvalEvidence;
+    assert.equal(rollback.holds.approvalEvidence, undefined);
+    assert.deepEqual(rollback.holds, { repository: 'cgwalters-forge/bot-ops', issue: 1,
+      needsYou: true, passView: true, proposals: pass.holds.proposals });
+    for (const key of ['draftReviewRepositories', 'reviewPools', 'reviewDispatchRepositories']) {
+      assert.equal(pass.pr[key], undefined, `${key} remains separate from compact evidence`);
+    }
+    if (!board || !review) {
+      assert.ok(!board && !review, 'supply both BOARD and REVIEW checkouts');
+      console.log('ok approval-evidence caller/rollback settings; exact-source probes skipped: pass BOARD and REVIEW');
+      process.exit(0);
+    }
+    async function main() {
+      const revision = root => execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+      const pin = execFileSync('{{ just_executable() }}', ['agent-board-pin'], { encoding: 'utf8' }).trim();
+      assert.equal(revision(board), pin);
+      const consumer = '3fb56cf9c3bedfe663bd236912ebc967ac8c1812';
+      assert.equal(revision(review), consumer, 'use the documented compatible consumer source');
+      const fixture = JSON.parse(fs.readFileSync(path.join(board, 'fixtures/approval-evidence-needs-you.json')));
+      const { parseNeedsYou } = await import(pathToFileURL(path.resolve(review, 'src/github/holds.ts')));
+      // The shared fixture serializes the extension, not a full publication.
+      // Supply a labelled synthetic needs-you envelope; do not change its evidence.
+      const raw = { schema: fixture.schema, validated_at: fixture.approval_evidence.observed_at,
+        changed_at: '2026-11-05T11:00:00Z', complete: true, summaries: 'complete',
+        sources: { reviews: 'complete' }, count: fixture.rows.length, omitted: 0,
+        counts: { decisions: fixture.rows.length, groups: 0, members: fixture.rows.length },
+        items: fixture.rows.map(row => {
+          const [repository, number] = row.key.split('#');
+          return { key: row.key, item: row.key, source: 'reviews', kind: 'review-approve', priority: null,
+            waiting_since: '2026-11-05T10:00:00Z', ask: 'Synthetic approval contract probe', recommendation: null,
+            action: { type: 'approve_pull_request', repository, number: Number(number), head: row.head } };
+        }) };
+      const parse = input => {
+        const list = parseNeedsYou(input);
+        assert.equal(typeof list, 'object', list);
+        assert.equal(list.refused, 0);
+        return list;
+      };
+      const base = parse(raw);
+      const enabled = { ...raw, approval_evidence: fixture.approval_evidence };
+      const list = parse(enabled);
+      assert.equal(list.complete, true);
+      for (const [index, row] of fixture.rows.entries()) {
+        const evidence = list.items[index].approvalEvidence;
+        const expected = fixture.approval_evidence.items[row.key];
+        assert.deepEqual(evidence, expected ? { ...expected, observed_at: fixture.approval_evidence.observed_at } : undefined, row.key);
+      }
+      assert.deepEqual(list.items[1].approvalEvidence.ci, { state: 'unknown', complete: false });
+      const withoutEvidence = value => {
+        const copy = structuredClone(value);
+        for (const item of copy.items) delete item.approvalEvidence;
+        return copy;
+      };
+      assert.deepEqual(withoutEvidence(list), base, 'counts, ordering, clocks and actions are unchanged');
+      const removed = structuredClone(enabled);
+      delete removed.approval_evidence;
+      assert.deepEqual(parse(removed), base, 'rollback returns to the legacy unknown state');
+      for (const [name, mutate] of [
+        ['carried', value => { value.items[0].carried = true; }],
+        ['grouped', value => { value.items[0].group = { reason: 'Synthetic group', numbers: [1261, 1265] }; }],
+        ['partial source', value => { value.sources.reviews = 'partial'; }],
+        ['wrong head', value => { value.approval_evidence.items[raw.items[0].key].assessed_head = 'f'.repeat(40); }],
+        ['unknown version', value => { value.approval_evidence.schema += '-unknown'; }],
+        ['malformed', value => { value.approval_evidence.items[raw.items[0].key].diff = { additions: -1, deletions: 0 }; }],
+        ['evicted', value => { delete value.approval_evidence.items[raw.items[0].key]; value.approval_evidence.omitted++; }],
+        ['detail evicted', value => { value.items.shift(); }],
+      ]) {
+        const value = structuredClone(enabled);
+        mutate(value);
+        assert.equal(parse(value).items.find(item => item.key === raw.items[0].key)?.approvalEvidence, undefined, name);
+      }
+      // Owning-layer tests exercise real config parsing (absent/false/true),
+      // serialization, head binding, cap/eviction and evidence-only clock changes.
+      for (const filter of ['approval_evidence', 'pass::tests::config_table']) {
+        execFileSync('cargo', ['test', '--locked', '--manifest-path', path.resolve(board, 'Cargo.toml'),
+          '-p', 'board-forge', filter], { stdio: 'inherit' });
+      }
+      console.log(`ok shared serialized approval evidence: producer ${pin}, consumer ${consumer}; not a live publication`);
     }
     main().catch(error => { console.error(error); process.exitCode = 1; });
 
