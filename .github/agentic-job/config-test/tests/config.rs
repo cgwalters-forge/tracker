@@ -1123,12 +1123,16 @@ fn workflows_follow_our_own_repositories_at_main_review_excepted_and_pin_the_res
             // so the wrapper it calls moves only by a reviewed change to the pin.
             let ordinary_review = file == "dispatch.yml"
                 && uses == "cgwalters-forge/actions/.github/workflows/cgwalters-agentic-job.yml@ba6c56925e63551fd4373fbeb23456a2f4a316da";
-            // Retro composes the harness directly: policy/check/apply and the
+            // These callers compose the harness directly: policy/check/apply and the
             // actions must run at one immutable source revision. Its workflow
             // test checks that all six pins agree.
-            let retro_piece = file == "retro.yml"
+            let composed_piece = matches!(file.as_str(), "retro.yml" | "weekly-comparison.yml")
                 && uses.starts_with("cgwalters-forge/agentic-job/");
-            let ok = match uses.starts_with(&owner) && file != "review.yml" && !ordinary_review && !retro_piece {
+            // A local call uses this caller's own reviewed commit, not a ref.
+            if file == "weekly-eval.yml" && uses == "./.github/workflows/weekly-comparison.yml" {
+                continue;
+            }
+            let ok = match uses.starts_with(&owner) && file != "review.yml" && !ordinary_review && !composed_piece {
                 true => is_ref(uses, |rev| rev == "main"),
                 false => is_ref(uses, is_commit),
             };
