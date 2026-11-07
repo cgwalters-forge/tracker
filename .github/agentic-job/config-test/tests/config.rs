@@ -682,6 +682,40 @@ fn dispatch_and_fix_open_complete_work_ready() {
     ));
 }
 
+#[test]
+fn recorded_excluded_tracker_fix_still_refuses_identical_requests() {
+    let incident = json_file("config-test/tests/excluded-fix.json");
+    let request = &incident["request"];
+    let selected = run_step(&step_script("Resolve the bounds"), &[
+        ("KIND", "fix"), ("REPO", request["REPO"].as_str().unwrap()),
+    ]).unwrap();
+    assert!(selected.contains("fix-allow=.github/agentic-job/fix.toml\n"));
+    // Keep this comparison in the ordinary configuration suite even without
+    // a CLI: later own-author admission must not silently widen branch bounds.
+    let old = toml_file("config-test/tests/incident-fix.toml");
+    let current = toml_file("fix.toml");
+    assert_eq!(old["github"]["outputs"]["push_to_pull_request_branch"]["branches"],
+        current["github"]["outputs"]["push_to_pull_request_branch"]["branches"]);
+    if !agentic_job_installed() {
+        return;
+    }
+    let compile = |branch: &str| agentic_job(&[
+        "policy", "--allow", &path_of("fix.toml"), "--repo", request["REPO"].as_str().unwrap(),
+        "--clone-url", "https://github.com/cgwalters-forge/tracker", "--kind", "branch",
+        "--outputs", request["OUTPUTS"].as_str().unwrap(), "--max-outputs", "3",
+        "--base", branch, "--pull-request", "1050", "--head", request["PUSH_HEAD"].as_str().unwrap(),
+        "--output-repo", request["OUTPUT_REPO"].as_str().unwrap(),
+    ]);
+    let branch = request["PUSH_BRANCH"].as_str().unwrap();
+    for _ in 0..2 {
+        let refused = compile(branch);
+        assert!(!refused.status.success());
+        assert!(String::from_utf8_lossy(&refused.stderr).contains(incident["refusal"].as_str().unwrap()), "{refused:?}");
+        assert!(refused.stdout.is_empty());
+    }
+    assert!(compile("dispatch/offline-control").status.success());
+}
+
 // agentic-job#3164: both fix bounds admit a fix of the bot's own pull request
 // in a repository they do not list, and only the bot's, the account apply
 // pushes as. Read as TOML, so a misspelt key or another login fails here.
