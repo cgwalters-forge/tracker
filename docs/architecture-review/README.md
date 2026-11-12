@@ -8,7 +8,11 @@ manual prompt prototype, **not an enabled reviewer or an effectiveness result**.
 A three-PR development pilot ran, but it is not held out because the prompt
 author had seen its labels. A follow-up reconstructs its packets, inventories
 all accessible feedback and adds independent agent scoring, not human review.
-Human adjudication and a new label-blind sample are still needed. Keep #1227 open.
+The existing artifacts are **accepted as a development pilot only**, recording
+the [controller decision](https://github.com/cgwalters-forge/tracker/issues/1227#issuecomment-6640204527),
+not human adjudication. Optional human corrections remain outstanding; they are
+not an operator-approval blocker to pilot acceptance. Keep #1227 open for the
+separate, unfinished feedback-isolated evaluation below.
 This does not change any production prompt, workflow, permission, merge rule,
 schedule or inference service.
 
@@ -107,12 +111,47 @@ files, directories, missing entries and symlinks (including the root) fail. This
 is stronger than checking hashes of listed files while ignoring other entries.
 It does not independently recompute selection/omissions, establish historical
 blinding or remove prior prompt-author contamination. This fixes packet hygiene
-only; #1227 remains open pending human adjudication and a separately scoped
-label-blind evaluation.
+only. Pilot acceptance is complete; #1227 remains open for the separately
+identified evaluation, not for an operator-approval prerequisite.
 The [evaluation](evaluation.md#recovered-executable-packet-recipe) specifies exact
 annotation, byte encoding, file selection, omissions and historical checks, and
 records successful comparisons of every archived digest, including diff.patch.
 Nothing runs automatically or adds a production caller setting.
+
+## Separate feedback-isolated evaluation FI-1
+
+[isolated-protocol.md](isolated-protocol.md) records the prior run's assertion
+that it was written and hash-frozen before new candidate discovery or feedback
+inspection; that chronology is not independently verified. [isolated.json](isolated.json)
+records exposure exclusions, bounded metadata-only search and rejection/defer
+log, three frozen provisional identities across bootc and ostree, review commit
+pins and evidence gaps. It is **incomplete**, not another scored result.
+Two follow-up GraphQL requests confirm complete submitted-review lists and the
+earliest cgwalters pins for all three identities, without retrieving bodies.
+The filtered ref-event metadata supplies no review-time base identities; ordinary
+base-branch pushes are not recorded by those events. Neither reviewed-commit
+parents nor current bases were substituted. Thus no historical packets, review
+sessions or feedback retrieval ran. Session suitability remains unverified, not
+a claimed isolation success. Search of containers/composefs failed; no repository
+was substituted.
+
+The archived order and title/current-path proxy select these same identities;
+this is not verified historical eligibility. The earlier assertion that protocol
+and sample were frozen before discovery lacks independently timestamped evidence.
+FI-1 remains stopped pending an evidence provider's historical base and freeze
+records for these exact cases. Repeating discovery, using today's base or adding
+a timestamp now cannot repair that provenance. Do not fetch feedback or start
+reviewers while the historical-input gate is closed.
+
+The default verification recipe also checks these separate records and negative
+fixtures: protocol/artifact hashes, pilot/exposure disjointness, earliest submitted
+review pins, ordered metadata-proxy selection, candidate uniqueness, pagination
+completeness, metadata bounds and stage counts. These checks certify
+record structure, not historical eligibility, semantic architecture quality or
+blinding. Complete historical inputs and session provenance before proceeding;
+do not replace frozen identities after zero-label or disappointing results.
+The original 0/3 design and 1/3 question matches, contamination, scoring and
+outstanding optional human corrections remain in their original records.
 
 `just test-architecture-review feedback` explicitly refreshes `feedback.json`
 from paginated API GETs. Do not refresh it casually: it is the scoring snapshot,
