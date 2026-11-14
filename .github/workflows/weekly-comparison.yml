@@ -121,7 +121,7 @@ jobs:
           config: ${{ runner.temp }}/agentic-job-host.toml
       - id: run
         timeout-minutes: 65
-        uses: cgwalters-forge/agentic-job/run@3f9f6425119b97bb3620a38fe0adc8e79be7dc8e # v0.6.11
+        uses: cgwalters-forge/agentic-job/run@eecc8c434e67a7607264ab3f7d90c88b6d02042a # v0.6.12
         with:
           job-dir: /var/tmp/agentic-job
           agent-user: sandbox
