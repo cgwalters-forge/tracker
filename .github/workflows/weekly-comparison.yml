@@ -46,7 +46,7 @@ jobs:
 
   policy:
     needs: brief
-    uses: cgwalters-forge/agentic-job/.github/workflows/policy.yml@3f9f6425119b97bb3620a38fe0adc8e79be7dc8e # v0.6.11, as retro.yml
+    uses: cgwalters-forge/agentic-job/.github/workflows/policy.yml@eecc8c434e67a7607264ab3f7d90c88b6d02042a # v0.6.11, as retro.yml
     permissions:
       contents: read
       actions: read
