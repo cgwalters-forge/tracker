@@ -22,8 +22,8 @@ noop = { max = 1 }
 missing_tool = { max = 1 }
 missing_data = { max = 1 }
 
-# The same reviewed, repository-scoped workflow admission as midstream.toml;
-# no protected filenames or other midstream repositories are exempted (#258).
+# The same workflow admission as midstream.toml, for every midstream fork
+# (operator, tracker#1239).
 [unprotected_files]
-repos = ["cgwalters-forge/gh-agentic-workflows"]
+repos = ["cgwalters-forge/composefs-rs", "cgwalters-forge/bootc", "cgwalters-forge/bcvk", "cgwalters-forge/rpm-ostree", "cgwalters-forge/anaconda", "cgwalters-forge/gh-agentic-workflows"]
 dot_folders = [".github"]

@@ -1155,27 +1155,29 @@ fn bcvk_is_a_midstream_target_that_is_never_merged_into() {
 }
 
 #[test]
-fn gh_agentic_workflows_has_the_only_midstream_workflow_exception_and_is_never_merged_into() {
-    let repo = "cgwalters-forge/gh-agentic-workflows";
-    for name in ["midstream.toml", "midstream-fix.toml", "comment.toml"] {
-        assert!(repos(name).iter().any(|r| r == repo), "{name}");
-    }
+fn every_midstream_fork_may_edit_workflows_and_is_never_merged_into() {
+    // Workflow edits are admitted in every midstream fork (tracker#1239):
+    // drafts only, never merged by the pass, so they land only upstream.
+    let forks = repos("midstream.toml");
+    assert_eq!(repos("midstream-fix.toml"), forks);
     assert!(!has_line_starting(&read("comment.toml"), "[unprotected_files]"));
     for name in ["midstream.toml", "midstream-fix.toml"] {
         let table = toml_file(name);
         let exception = table["unprotected_files"].as_table().expect("workflow exception");
         assert_eq!(exception.len(), 2, "{name}: no protected filename exceptions");
-        assert_eq!(strings(&exception["repos"], name), [repo]);
+        assert_eq!(strings(&exception["repos"], name), forks, "{name}");
         assert_eq!(strings(&exception["dot_folders"], name), [".github"]);
     }
-    for name in ["dispatch.toml", "fix.toml"] {
-        for list in lists(name) {
-            assert!(!list.iter().any(|r| r == repo), "{name}");
-        }
-    }
     let pass = json_file("../pass.json");
-    for list in [&pass["follow"], &pass["workRepositories"], &pass["pr"]["noMerge"]] {
-        assert!(list.as_array().expect("pass repository list").contains(&json!(repo)));
+    for repo in &forks {
+        for name in ["dispatch.toml", "fix.toml"] {
+            for list in lists(name) {
+                assert!(!list.iter().any(|r| r == repo), "{name}: {repo}");
+            }
+        }
+        for list in [&pass["follow"], &pass["workRepositories"], &pass["pr"]["noMerge"]] {
+            assert!(list.as_array().expect("pass repository list").contains(&json!(repo)), "{repo}");
+        }
     }
 }
 
@@ -1211,7 +1213,7 @@ fn review_gate_discovers_and_deduplicates_all_implement_and_fix_exceptions() {
 }
 
 #[test]
-fn agentic_job_policy_limits_midstream_workflow_edits_to_the_admitted_fork() {
+fn agentic_job_policy_admits_workflow_edits_in_every_midstream_fork() {
     if !agentic_job_installed() {
         return;
     }
@@ -1229,8 +1231,8 @@ fn agentic_job_policy_limits_midstream_workflow_edits_to_the_admitted_fork() {
             }
             let policy: Value = serde_json::from_str(&agentic_job_ok(&args)).expect("policy JSON");
             let bound = &policy["safe_outputs"][kind];
-            let expected = if repo == "cgwalters-forge/gh-agentic-workflows" { json!([".github"]) } else { Value::Null };
-            assert_eq!(bound["unprotected_dot_folders"], expected, "{repo} {file}: no other fork may edit protected dot folders");
+            // Every midstream fork may edit `.github/` (tracker#1239).
+            assert_eq!(bound["unprotected_dot_folders"], json!([".github"]), "{repo} {file}: midstream forks may edit workflows");
             assert_eq!(bound["protect_top_level_dot_folders"], true, "{repo} {file}");
             assert_eq!(bound["protected_files_policy"], "blocked", "{repo} {file}");
             let protected = bound["protected_files"].as_array().expect("protected filenames");
@@ -1247,8 +1249,8 @@ fn agentic_job_policy_limits_midstream_workflow_edits_to_the_admitted_fork() {
 }
 
 /// Exercise the existing collector and independent patch checker, not a local
-/// approximation of protected-path matching. Only an ordinary source file and
-/// the admitted fork's workflow may pass.
+/// approximation of protected-path matching. Only an ordinary source file and,
+/// in a midstream fork, a workflow may pass.
 fn check_midstream_paths(policy: &Value, repo: &str, kind: &str, head: &str) {
     let dir = temp_path("path-check");
     let out = dir.join("out");
@@ -1268,7 +1270,8 @@ fn check_midstream_paths(policy: &Value, repo: &str, kind: &str, head: &str) {
         let patch = format!("From {} Mon Sep 17 00:00:00 2001\nX-GH-AW-Base-Commit: {head}\nFrom: Test <test@example.test>\nDate: Thu, 5 Nov 2026 00:00:00 +0000\nSubject: [PATCH] Test workflow admission\n\n---\ndiff --git a/{path} b/{path}\nnew file mode 100644\n--- /dev/null\n+++ b/{path}\n@@ -0,0 +1 @@\n+test\n", "1".repeat(40));
         std::fs::write(out.join("aw-dispatch-x.patch"), patch).unwrap();
         let result = agentic_job(&["check", "--policy", policy_path.to_str().unwrap(), "--outputs", out.to_str().unwrap(), "--collected", collected.to_str().unwrap()]);
-        let accepted = path == "src/test.txt" || (["cgwalters-forge/gh-agentic-workflows", "cgwalters-forge/tracker"].contains(&repo) && path == ".github/workflows/test.yml");
+        let workflows = repo == "cgwalters-forge/tracker" || repos("midstream.toml").iter().any(|r| r == repo);
+        let accepted = path == "src/test.txt" || (workflows && path == ".github/workflows/test.yml");
         assert_eq!(result.status.success(), accepted, "{repo} {kind} {path}: {}\n{}", String::from_utf8_lossy(&result.stderr), String::from_utf8_lossy(&result.stdout));
     }
     std::fs::remove_dir_all(dir).unwrap();
