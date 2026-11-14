@@ -158,7 +158,7 @@ It runs alongside `just test` in the required CI job, including the retained
 November 13 live sample. To run that same Node step locally without dependencies:
 
 ```sh
-node -e 'const fs = require("node:fs"); const w = fs.readFileSync(".github/workflows/ci.yml", "utf8"); eval(/shell: node \{0\}\n        run: \|\n([\s\S]+?)\n\n  # actionlint/.exec(w)[1].replace(/^          /gm, ""));'
+node -e 'const fs = require("node:fs"); const w = fs.readFileSync(".github/workflows/ci.yml", "utf8"); eval(/- name: Test CI-health saved reports and publication\n        shell: node \{0\}\n        run: \|\n([\s\S]+?)\n\n  # actionlint/.exec(w)[1].replace(/^          /gm, ""));'
 ```
 
 Setting `CI_HEALTH_SAMPLE=/path/report.json` substitutes another saved
@@ -265,14 +265,66 @@ identity/owner/fix mapping of either sample. Each occurs in one observed run;
 neither supports recurrence or same-SHA recovery here. The index stays empty,
 pending mappings above stay visible, and no issue closure is called deployment.
 
-**Hosted acceptance unavailable in this handback:** the read-only API lookup of
+**Historical deployment gap (superseded by the hosted evidence below):** the read-only API lookup of
 `repos/cgwalters-forge/tracker/actions/workflows/ci-health.yml` and the default
-branch file lookup both returned HTTP 404 on November 13. The workflow is not
-deployed on the default branch. This run can hand back a patch, not push or start
-hosted jobs; it did not dispatch a different ref to bypass the default-branch
-guard. After merge, the controller must run manual `preview: true` and retain
-its run URL, all-source job-token access, raw/rendered artifact digests and
-upload/download/retention evidence. Scheduling and owned-comment create/update
-also remain unverified. These are deployment evidence gaps, not a request to
-change policy, credentials or variables. Keep publication off and #1229 open
-until that acceptance is reviewed.
+branch file lookup both returned HTTP 404 on November 13. The workflow was not
+deployed on the default branch at that lookup. That run could hand back a patch,
+not push or start hosted jobs; it did not dispatch a different ref to bypass the
+default-branch guard. Hosted preview, all-source job-token access, artifact
+provenance/retention, scheduling and owned-comment create/update were unverified
+then. Publication was kept off and #1229 open pending reviewed acceptance; the
+current evidence and remaining gaps are recorded below.
+
+### 2026-11-14 hosted evidence review
+
+The existing implementation [#1325](https://github.com/cgwalters-forge/tracker/pull/1325)
+is merged, not an outstanding draft. Read-only inspection found the default-branch
+workflow active and one completed [scheduled run, 43447382610](https://github.com/cgwalters-forge/tracker/actions/runs/43447382610),
+at source `3310be48fae2d26472e7b840b69845729d8e5190` on November 13.
+Both collect and report jobs passed. The logs record the verified installation
+of `223fc372d321abfc643929faa4e8218b2422f30d`, one collection, same-run artifact
+download with a matching archive digest, and `Preview only; status comment unchanged.`
+The scheduled invocation had `PREVIEW=false`; the source policy's `publish: false`
+kept it read-only. This is scheduled preview evidence, **not a manual dispatch
+or comment-publication test**. No new collection or dispatch was made for this review.
+
+The downloaded provenance binds that source, collector, run attempt 1 and the
+unchanged config hash `f322be4b7ca7e0a34b22f433941e0d0c3edcf3017ae165503b3102f8b80cbf3b`.
+The raw report SHA-256 is
+`5e5af5bd2bbf7eef0dc7573a209ca245af09ca32cc4ad606f9efee6d6fb9b46b`;
+the dated JSON is byte-identical. The artifacts are
+[raw JSON/provenance](https://github.com/cgwalters-forge/tracker/actions/runs/43447382610/artifacts/14049485678)
+(archive SHA-256 `1a497803f1aeea0e6a3cae1d1ccbab8cb4015ac82bd09fa9e406acaa7b9cfd1b`)
+and [dated JSON/Markdown](https://github.com/cgwalters-forge/tracker/actions/runs/43447382610/artifacts/14049650425)
+(archive SHA-256 `54cbfbbaaacbbe0a860fd1e53939c61bdbc3fc0cd4fa9190ee2195837e46aac5`).
+Both were downloadable during this review; the API lists expiry on December 18,
+consistent with 35-day retention, not proof they will remain available indefinitely.
+
+The hosted report covers the same October 14–November 13 window but is a separate
+sample from the local one above. **It remains incomplete.** In particular, bcvk
+`main-c10s.yml` returned HTTP 404 with the job token: its empty populations are
+unavailable history, unlike the local sample's completed empty listing. A
+read-only follow-up on November 14 resolved it as a missing workflow, not an
+access failure: `bootc-dev/bcvk` is public with default branch `main`; with a
+separate read-only token, `main.yml` is active while
+`repos/bootc-dev/bcvk/actions/workflows/main-c10s.yml` returns 404, no `main`
+commit has touched `.github/workflows/main-c10s.yml`, and no run since October 14
+has that path. The local sample's "completed empty listing" for this target was
+therefore a missing workflow reported as complete. The configured target is
+stale; dropping it changes the reviewed 20-target scope and config hash, so it is
+left for scope review rather than changed here. Other targets retain
+byte/time/log warnings, and C composefs `builds.yaml` and agenthome
+`ci.yml` have no eligible history. Successful jobs do not establish full source
+access, healthy CI, supported signature mappings or eventual run-level outcomes.
+
+The saved hosted JSON was replayed through the existing config/renderer/publication
+regression suite, including stale-window refusal, without another live collection.
+A November 14 continuation check of the workflow run list still found only
+scheduled run 43447382610, with no manual preview available to inspect.
+Still missing: a hosted **manual** `preview: true` run, reviewed scope/index
+acceptance (including the stale bcvk `main-c10s.yml` target), and owned-comment
+create/update evidence. This patch-only handback cannot start a hosted job; the controller must
+dispatch `ci-health.yml` on the default branch with `preview: true` and retain its
+run/artifacts. No credential or variable change is requested. Keep publication
+off and #1229 open; neither the earlier 404 deployment gap nor first-target
+starvation should be reported as the current blocker.
