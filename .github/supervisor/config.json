@@ -35,7 +35,7 @@
     "pool": "claude",
     "cooldownHours": 1,
     "skipUnchangedFailures": false,
-    "profile": { "repository": "cgwalters-forge/agenthome", "ref": "main" },
+    "profile": { "repository": "cgwalters-forge/agenthome", "ref": "b68e3f632a870aa1bb681b811693bdf86c1ff077" },
     "requests": { "repository": "cgwalters-forge/tracker", "issue": 656 },
     "log": { "repository": "cgwalters-forge/operator", "issue": 2 },
     "state": { "repository": "cgwalters-forge/tracker", "issue": 718 },
@@ -57,7 +57,7 @@
       "status_update": 1
     },
     "releaseList": [
-      {"item": "cgwalters-forge/tracker#1253", "holdEvent": 35285233967, "reason": "Choose the next-release bootstrap and leave the closed v0.6.9 train untouched; [caller remainder](https://github.com/cgwalters-forge/tracker/issues/1253) explicitly forbids replay and requires hosted acceptance."},
+      {"item": "cgwalters-forge/tracker#1253", "holdEvent": 35285233967, "reason": "Choose the next-release bootstrap and leave the closed v0.6.9 train untouched; [caller reb68e3f632a870aa1bb681b811693bdf86c1ff077der](https://github.com/cgwalters-forge/tracker/issues/1253) explicitly forbids replay and requires hosted acceptance."},
       {"item": "cgwalters-forge/tracker#1239", "holdEvent": 35079975456, "reason": "Plan a reviewed ostree midstream-target/admission change separately from protected workflow edits, preserving refusals meanwhile; [routing prerequisite](https://github.com/cgwalters-forge/tracker/issues/1239#issuecomment-6621170719) is not permission to bypass bounds."},
       {"item": "cgwalters-forge/tracker#1242", "holdEvent": 35084638149, "reason": "Preserve 32-bit coverage and diagnose the Debian DNS failure through a properly admitted ostree target; [evidence](https://github.com/cgwalters-forge/tracker/issues/1242#issuecomment-6620354500) calls for engineering and reviewed workflow routing, not new credentials."},
       {"item": "cgwalters-forge/tracker#1243", "holdEvent": 35085197214, "reason": "Investigate the staging-directory ENOENT on an authorized ostree target before asserting a race fix; [latest evidence](https://github.com/cgwalters-forge/tracker/issues/1243#issuecomment-6620536962) leaves cause unproved."},
