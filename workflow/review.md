@@ -116,13 +116,16 @@ or nit unless the concrete impact meets the blocker definition below.
 
 ## Output
 
-Return exactly one safe output: add_comment on the triggering pull request,
-or noop if no useful review can be made. Set only type and body on add_comment;
-do not set item_number or other routing fields: the workflow fixes the target.
-If offered, you may include up to ten create_pull_request_review_comment
-outputs with add_comment, never with noop. Use one per finding on a diff line:
-path, line (and start_line for a range), side LEFT only for a removed line, and
-body with the finding and severity. Set no pull_request_number or repo. Do not
+The run's brief lists the safe output types you may emit and how many of
+each ("Requests"), and `agentic-job handback guide` lists each type's
+fields; follow them for which types and how many. Emit exactly one
+verdict: an add_comment on the triggering pull request, or noop if no useful
+review can be made. Inline review comments, where offered, go only with the
+add_comment, one per finding on a diff line, with its severity. The review
+gate takes fewer fields than the guide lists: on add_comment set only type and
+body; on an inline comment only path, line, start_line for a range, side LEFT
+only for a removed line, and body. Set no repo or other routing field: the
+workflow fixes the target and the gate refuses them. Do not
 repeat details inline and in the verdict. The verdict comment still lists every
 blocker on a line of its own with its file and line and one-sentence claim:
 the automated fixer reads only the verdict.
