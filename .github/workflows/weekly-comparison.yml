@@ -116,7 +116,7 @@ jobs:
         run: agentic-job secure-host inference /var/tmp/agentic-job/config.toml
       - name: The host configuration
         run: agentic-job config --host --from /var/tmp/agentic-job/config.toml --string sandbox.env.PATH=/var/tmp/agentic-job:/usr/local/bin:/usr/bin:/bin > "$RUNNER_TEMP/agentic-job-host.toml"
-      - uses: cgwalters-forge/agentic-job/secure-host@3f9f6425119b97bb3620a38fe0adc8e79be7dc8e # v0.6.11
+      - uses: cgwalters-forge/agentic-job/secure-host@4439980da2aef4db79b40890599ea661daab12b0 # v0.6.13
         with:
           config: ${{ runner.temp }}/agentic-job-host.toml
       - id: run
